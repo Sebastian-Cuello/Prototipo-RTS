@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<!--! 
+    Developed by: Sebastián Cuello
+    Version: 0.7.0
+    Tools used: 
+    - HTML
+    - CSS
+    - JavaScript
+    - Antigravity AI
+    - Gemini 3 PRO
+    - Claude Sonnet 4.5
+    - SFX Engine
+    Art created with AI
+-->
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epic RTS - Warcraft Style</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Warcraft', 'Courier New', monospace;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 10px;
+            height: 100vh;
+            overflow: hidden;
+            min-height: 100vh;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        #gameWrapper {
+            display: flex;
+            background: #000;
+            border: 3px solid #444;
+            box-shadow: 0 0 50px rgba(0, 200, 255, 0.4);
+            height: 100vh;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        #leftPanel {
+            width: 400px;
+            background: linear-gradient(180deg, #2c3e50, #34495e);
+            border-right: 3px solid #444;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            position: relative;
+            height: 100%;
+            max-height: 100vh;
+            /* Full height */
+        }
+
+        #gameArea {
+            position: relative;
+            background: #000;
+            flex-grow: 1;
+            /* Fill remaining space */
+            height: 100vh;
+            overflow: hidden;
+            /* Prevent scrollbars */
+        }
+
+        #gameCanvas {
+            display: block;
+            cursor: crosshair;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            /* border-bottom: 3px solid #444; Removed to fit window */
+        }
+
+        /* --- Panel Sections --- */
+        .panel-section {
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 2px solid #444;
+            padding: 12px;
+            position: relative;
+        }
+
+        .panel-section:last-child {
+            border-bottom: none;
+        }
+
+        .section-title {
+            color: #f39c12;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 0 0 10px rgba(243, 156, 18, 0.5);
+        }
+
+        /* Resources */
+        .resources {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .resource {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 6px 8px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .resource-icon {
+            width: 15px;
+            height: 15px;
+            border-radius: 3px;
+        }
+
+        .gold {
+            background: #ffd700;
+        }
+
+        .wood {
+            background: #8b4513;
+        }
+
+        .stone {
+            background: #808080;
+        }
+
+        .food {
+            background: #ff6b6b;
+        }
+
+        .mana {
+            background: #9b59b6;
+        }
+
+        .crystal {
+            background: #00bcd4;
+        }
+
+        .faith {
+            background: #ffc107;
+        }
+
+        /* Unit/Building Info */
+        #selectedInfo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .portrait {
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #555;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            color: #fff;
+        }
+
+        .details {
+            flex-grow: 1;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .stat-bar {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            margin: 2px 0;
+            position: relative;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .stat-fill {
+            height: 100%;
+            transition: width 0.1s;
+            border-radius: 4px;
+        }
+
+        .health-fill {
+            background: #e74c3c;
+        }
+
+        .mana-fill {
+            background: #3498db;
+        }
+
+        .exp-fill {
+            background: #f39c12;
+        }
+
+        /* Action Grid */
+        #actionGrid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+        }
+
+        .action-btn {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #666;
+            background: linear-gradient(135deg, #333, #444);
+            color: #fff;
+            cursor: pointer;
+            text-align: center;
+            line-height: 60px;
+            font-size: 20px;
+            transition: all 0.1s;
+            border-radius: 5px;
+            position: relative;
+            opacity: 0.9;
+        }
+
+        .action-btn:hover:not(.disabled) {
+            border-color: #0ff;
+            background: linear-gradient(135deg, #444, #555);
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        .action-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .action-cost {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            font-size: 8px;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 1px 3px;
+            border-radius: 3px;
+            line-height: normal;
+        }
+
+        /* Unit/Building Styles on Canvas (CSS Art) */
+        .unit-color-1 {
+            fill: #fff;
+        }
+
+        /* Player 1 */
+        .unit-color-2 {
+            fill: #e74c3c;
+        }
+
+        /* Enemy 2 */
+    </style>
+</head>
+
+<body>
+    <div id="gameWrapper">
+        <div id="leftPanel">
+            <div class="panel-section">
+                <div class="section-title">Resources</div>
+                <div class="resources">
+                    <div class="resource">
+                        <div class="resource-icon gold"></div>
+                        <span id="gold">300</span>
+                    </div>
+                    <div class="resource">
+                        <div class="resource-icon wood"></div>
+                        <span id="wood">300</span>
+                    </div>
+                    <div class="resource">
+                        <div class="resource-icon stone"></div>
+                        <span id="stone">150</span>
+                    </div>
+                    <div class="resource">
+                        <div class="resource-icon food"></div>
+                        <span id="food">0/10</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="section-title">Selection Info</div>
+                <div id="selectionPanel">
+                    <div id="selectedInfo">
+                        <div class="portrait" id="selectedPortrait">❓</div>
+                        <div class="details">
+                            <div id="selectedName">No Unit Selected</div>
+                            <div id="selectedSubInfo"></div>
+                            <div class="stat-bar">
+                                <div class="stat-fill health-fill" id="selectedHealth"></div>
+                            </div>
+                            <div class="stat-bar">
+                                <div class="stat-fill mana-fill" id="selectedMana"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-title" id="actionTitle">Actions</div>
+                    <div id="actionGrid">
+                        <div class="action-btn disabled"></div>
+                        <div class="action-btn disabled"></div>
+                        <div class="action-btn disabled"></div>
+                        <div class="action-btn disabled"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="section-title">Game Log</div>
+                <div id="gameLog" style="height: 150px; overflow-y: auto; font-size: 10px; color: #ccc;">
+                    Game Started. Build a Town Hall (H) and Farm (F).
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="section-title">Minimap</div>
+                <canvas id="minimapCanvas" width="280" height="233"
+                    style="background: #000; border: 1px solid #666; cursor: pointer;"></canvas>
+            </div>
+            <div class="panel-section">
+                <div class="section-title">Controls</div>
+                <div style="font-size: 11px; line-height: 1.6;">
+                    <p><strong>Left Click:</strong> Select Unit/Building</p>
+                    <p><strong>Right Click:</strong> Move/Attack/Target</p>
+                    <p><strong>P:</strong> Select Peasant</p>
+                    <p><strong>A:</strong> Attack Command (not fully implemented)</p>
+                    <p><strong>S:</strong> Stop Command (not fully implemented)</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="gameArea">
+            <canvas id="gameCanvas"></canvas>
+            <div class="game-info" style="position: absolute; bottom: 10px; width: 100%;">
+                <span>Time: <span id="gameTime">Day 1</span> | FPS: <span id="fps">30</span></span>
+                <span>Selected: <span id="selectedUnitCount">0</span></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Map Canvas for Static Rendering -->
+    <canvas id="mapCanvas" style="display: none;"></canvas>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+
+</html>
