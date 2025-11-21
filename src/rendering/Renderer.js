@@ -32,7 +32,7 @@ import { camera } from './Camera.js';
 import { FACTIONS, TILES, UNIT_STATS } from '../config/entityStats.js';
 import Unit from '../entities/Unit.js';
 import Building from '../entities/Building.js';
-import { getBuildingImage, getUnitImage } from '../utils/AssetLoader.js';
+import { getBuildingImage, getUnitImage, getTileImage } from '../utils/AssetLoader.js';
 
 
 let canvas, ctx, mapCanvas, mapCtx;
@@ -62,14 +62,20 @@ export function drawStaticMap() {
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tile = map[y][x];
-            mapCtx.fillStyle = tile.color;
-            mapCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            const tileImage = getTileImage(tile.id);
 
-            // Draw resource symbol
-            if (tile.id === TILES.TREE.id) {
-                mapCtx.fillStyle = '#444';
-                mapCtx.font = '20px Arial';
-                mapCtx.fillText('🌲', x * TILE_SIZE + 5, y * TILE_SIZE + 24);
+            if (tileImage) {
+                mapCtx.drawImage(tileImage, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            } else {
+                mapCtx.fillStyle = tile.color;
+                mapCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+                // Draw resource symbol (Fallback)
+                if (tile.id === TILES.TREE.id) {
+                    mapCtx.fillStyle = '#444';
+                    mapCtx.font = '20px Arial';
+                    mapCtx.fillText('🌲', x * TILE_SIZE + 5, y * TILE_SIZE + 24);
+                }
             }
         }
     }
@@ -226,17 +232,23 @@ export function draw() {
                     ctx.fillStyle = '#000';
                     ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 } else {
-                    ctx.fillStyle = tile.color;
-                    ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    const tileImage = getTileImage(tile.id);
 
-                    if (tile.id === TILES.TREE.id) {
-                        ctx.fillStyle = '#274e13';
-                        ctx.font = '20px Arial';
-                        ctx.fillText('🌲', x * TILE_SIZE + 5, y * TILE_SIZE + 24);
-                    } else if (tile.id === TILES.MOUNTAIN.id) {
-                        ctx.fillStyle = '#444';
-                        ctx.font = '20px Arial';
-                        ctx.fillText('⛰️', x * TILE_SIZE + 5, y * TILE_SIZE + 24);
+                    if (tileImage) {
+                        ctx.drawImage(tileImage, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    } else {
+                        ctx.fillStyle = tile.color;
+                        ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+                        if (tile.id === TILES.TREE.id) {
+                            ctx.fillStyle = '#274e13';
+                            ctx.font = '20px Arial';
+                            ctx.fillText('🌲', x * TILE_SIZE + 5, y * TILE_SIZE + 24);
+                        } else if (tile.id === TILES.MOUNTAIN.id) {
+                            ctx.fillStyle = '#444';
+                            ctx.font = '20px Arial';
+                            ctx.fillText('⛰️', x * TILE_SIZE + 5, y * TILE_SIZE + 24);
+                        }
                     }
 
                     if (fog === 1) {

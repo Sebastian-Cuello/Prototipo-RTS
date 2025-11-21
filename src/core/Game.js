@@ -38,10 +38,13 @@ let fpsTimer = 0;
 let actualFPS = 0;
 
 import { soundManager } from '../systems/SoundManager.js';
+import { preloadTileAssets } from '../utils/AssetLoader.js';
+import { TILES } from '../config/entityStats.js';
 
 export function initGame() {
     generateMap();
     spawnInitialEntities();
+    preloadTileAssets(TILES);
 
     // Initialize AI
     const ais = [];
