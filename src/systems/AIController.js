@@ -125,6 +125,12 @@ export default class AIController {
         // Combat Micro (Every frame if enabled)
         if (this.microManagement) {
             this.handleCombatMicro(myUnits);
+
+            // Formations (Less frequent)
+            if (this.timer % 60 === 0) {
+                const army = myUnits.filter(u => u.type !== 'peasant');
+                this.handleCombatFormation(army);
+            }
         }
 
         // Defense & Raids (Fast: ~0.5s)
@@ -233,6 +239,17 @@ export default class AIController {
     handleCombatMicro(myUnits) {
         const army = myUnits.filter(u => u.type !== 'peasant');
 
+        // Cache de enemigos visibles para evitar recalcular
+        const visibleEnemiesCache = new Map();
+
+        const getVisibleForUnit = (unit) => {
+            const key = `${Math.floor(unit.x)},${Math.floor(unit.y)}`;
+            if (!visibleEnemiesCache.has(key)) {
+                visibleEnemiesCache.set(key, this.getVisibleEnemies(unit));
+            }
+            return visibleEnemiesCache.get(key);
+        };
+
         // Separar por rol
         const archers = army.filter(u => u.type === 'archer');
         const melee = army.filter(u => u.type === 'soldier' || u.type === 'knight');
@@ -241,9 +258,9 @@ export default class AIController {
         archers.forEach(archer => {
             this.handleKiting(archer);
 
-            const visibleEnemies = this.getVisibleEnemies(archer);
+            const visibleEnemies = getVisibleForUnit(archer);
             if (visibleEnemies.length > 0) {
-                const bestTarget = this.selectPriorityTarget(archer, visibleEnemies);
+                const bestTarget = this.selectPriorityTarget(archer, visibleEnemies, true); // Include buildings for archers
                 if (bestTarget) {
                     // Solo cambiar target si el nuevo es MUCHO mejor
                     if (!archer.targetEntity || archer.targetEntity.isDead ||
@@ -256,12 +273,66 @@ export default class AIController {
 
         // Melee también necesita micro
         melee.forEach(unit => {
-            const visibleEnemies = this.getVisibleEnemies(unit);
+            const visibleEnemies = getVisibleForUnit(unit);
             if (visibleEnemies.length > 0) {
                 const bestTarget = this.selectPriorityTarget(unit, visibleEnemies);
                 if (bestTarget && (!unit.targetEntity || unit.targetEntity.isDead)) {
                     unit.attackTarget(bestTarget);
                 }
+            }
+        });
+    }
+
+    handleCombatFormation(army) {
+        if (!this.microManagement || army.length < 6 || 
+       (this.state !== 'ATTACK' && this.state !== 'DEFENSE')) return;
+
+        const archers = army.filter(u => u.type === 'archer');
+        const melee = army.filter(u => u.type === 'soldier' || u.type === 'knight');
+
+        if (archers.length === 0 || melee.length === 0) return;
+
+        // Calcular centro del ejército
+        const avgX = army.reduce((sum, u) => sum + u.x, 0) / army.length;
+        const avgY = army.reduce((sum, u) => sum + u.y, 0) / army.length;
+
+        // Encontrar dirección hacia enemigos más cercanos
+        const nearestEnemy = units.find(u =>
+            !u.isDead &&
+            u.faction !== this.factionId &&
+            u.faction !== FACTIONS.NEUTRAL.id
+        );
+
+        if (!nearestEnemy) return;
+
+        const angleToEnemy = Math.atan2(nearestEnemy.y - avgY, nearestEnemy.x - avgX);
+
+        // Solo reposicionar unidades si están muy dispersas y no en combate
+        melee.forEach((unit, idx) => {
+            if (unit.targetEntity || unit.isAttacking) return; // No interrumpir combate
+
+            const spread = 0.4;
+            const angle = angleToEnemy + (idx - melee.length / 2) * spread;
+            const formationX = avgX + Math.cos(angle) * 2;
+            const formationY = avgY + Math.sin(angle) * 2;
+
+            const dist = Math.abs(unit.x - formationX) + Math.abs(unit.y - formationY);
+            if (dist > 5) {
+                unit.moveTo(formationX, formationY);
+            }
+        });
+
+        archers.forEach((unit, idx) => {
+            if (unit.targetEntity || unit.isAttacking) return;
+
+            const spread = 0.4;
+            const angle = angleToEnemy + Math.PI + (idx - archers.length / 2) * spread;
+            const formationX = avgX + Math.cos(angle) * 5;
+            const formationY = avgY + Math.sin(angle) * 5;
+
+            const dist = Math.abs(unit.x - formationX) + Math.abs(unit.y - formationY);
+            if (dist > 5) {
+                unit.moveTo(formationX, formationY);
             }
         });
     }
@@ -277,18 +348,34 @@ export default class AIController {
             Math.abs(u.x - unit.x) < 3 && Math.abs(u.y - unit.y) < 3
         );
 
-        if (nearbyMelee.length > 0 && !unit.isAttacking) {
+        if (nearbyMelee.length > 0) {
             const enemy = nearbyMelee[0];
 
             // Calcular dirección de escape
             const angle = Math.atan2(unit.y - enemy.y, unit.x - enemy.x);
             const retreatDistance = 4; // Mantenerse a distancia de ataque
-            const retreatX = unit.x + Math.cos(angle) * retreatDistance;
-            const retreatY = unit.y + Math.sin(angle) * retreatDistance;
+            let retreatX = unit.x + Math.cos(angle) * retreatDistance;
+            let retreatY = unit.y + Math.sin(angle) * retreatDistance;
 
             // Validar posición
-            const rx = Math.floor(retreatX);
-            const ry = Math.floor(retreatY);
+            let rx = Math.floor(retreatX);
+            let ry = Math.floor(retreatY);
+
+            // Intentar dirección alternativa si está bloqueado
+            if (!(rx > 0 && rx < MAP_WIDTH && ry > 0 && ry < MAP_HEIGHT && map[ry][rx].passable)) {
+                // Probar ángulos alternativos (perpendiculares)
+                const altAngles = [angle + Math.PI / 2, angle - Math.PI / 2];
+                for (const altAngle of altAngles) {
+                    retreatX = unit.x + Math.cos(altAngle) * retreatDistance;
+                    retreatY = unit.y + Math.sin(altAngle) * retreatDistance;
+                    rx = Math.floor(retreatX);
+                    ry = Math.floor(retreatY);
+
+                    if (rx > 0 && rx < MAP_WIDTH && ry > 0 && ry < MAP_HEIGHT && map[ry][rx].passable) {
+                        break; // Encontramos una dirección válida
+                    }
+                }
+            }
 
             if (rx > 0 && rx < MAP_WIDTH && ry > 0 && ry < MAP_HEIGHT &&
                 map[ry][rx].passable) {
@@ -325,28 +412,46 @@ export default class AIController {
         return priority * 10 + healthFactor * 5 - distance * 0.5;
     }
 
-    selectPriorityTarget(unit, visibleEnemies) {
+    selectPriorityTarget(unit, visibleEnemies, includeBuildings = false) {
         const priorities = {
             'peasant': 1,
             'archer': 4,    // Kill high damage dealers first
             'soldier': 2,
-            'knight': 3
+            'knight': 3,
+            // Buildings
+            'farm': 2,
+            'barracks': 5,
+            'townhall': 10,
+            'guardtower': 3
         };
+
+        let targets = visibleEnemies;
+
+        if (includeBuildings && this.state === 'ATTACK') {
+            const visibleBuildings = buildings.filter(b =>
+                !b.isDead &&
+                b.faction !== this.factionId &&
+                b.faction !== FACTIONS.NEUTRAL.id &&
+                Math.abs(b.x - unit.x) < unit.stats.range + 3 &&
+                Math.abs(b.y - unit.y) < unit.stats.range + 3
+            );
+            targets = [...visibleEnemies, ...visibleBuildings];
+        }
 
         let bestTarget = null;
         let bestScore = -Infinity;
 
-        visibleEnemies.forEach(enemy => {
-            const distance = Math.abs(enemy.x - unit.x) + Math.abs(enemy.y - unit.y);
-            const healthFactor = (1 - enemy.health / enemy.maxHealth); // Prefer wounded
-            const priority = priorities[enemy.type] || 1;
+        targets.forEach(target => {
+            const distance = Math.abs(target.x - unit.x) + Math.abs(target.y - unit.y);
+            const healthFactor = (1 - target.health / target.maxHealth); // Prefer wounded
+            const priority = priorities[target.type] || 1;
 
             // Score: Priority + Wounded - Distance penalty
             const score = priority * 10 + healthFactor * 5 - distance * 0.5;
 
             if (score > bestScore && distance <= unit.stats.range) {
                 bestScore = score;
-                bestTarget = enemy;
+                bestTarget = target;
             }
         });
 
