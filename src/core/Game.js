@@ -22,7 +22,7 @@
 import { gameState, units, setUnits, buildings, setBuildings, aiControllers, setAIControllers } from './GameState.js';
 import { MS_PER_UPDATE, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from '../config/constants.js';
 import { updateFog } from '../systems/FogOfWar.js';
-import { draw, drawStaticMap } from '../rendering/Renderer.js';
+import { renderer, draw, updateFogRenderer } from '../rendering/Renderer.js';
 import { drawMinimap } from '../rendering/MinimapRenderer.js';
 import { updateResourcesUI, updateSelectionPanel } from '../ui/UIManager.js';
 import AIController from '../systems/AIController.js';
@@ -38,13 +38,12 @@ let fpsTimer = 0;
 let actualFPS = 0;
 
 import { soundManager } from '../systems/SoundManager.js';
-import { preloadTileAssets } from '../utils/AssetLoader.js';
-import { TILES } from '../config/entityStats.js';
+
 
 export function initGame() {
     generateMap();
     spawnInitialEntities();
-    preloadTileAssets(TILES);
+    spawnInitialEntities();
 
     // Initialize AI
     const ais = [];
@@ -56,7 +55,7 @@ export function initGame() {
     // Initialize Audio
     soundManager.init();
 
-    drawStaticMap(); // Initial draw
+    // drawStaticMap(); // Initial draw handled by renderer init
 }
 
 function updateGameLogic() {
@@ -78,6 +77,7 @@ function updateGameLogic() {
         updateSelectionPanel();
         updateResourcesUI();
         updateFog();
+        updateFogRenderer();
     }
 }
 

@@ -11,38 +11,83 @@ export function initMinimapRenderer(canvas, ctx) {
     minimapCtx = ctx;
 }
 
+import { TILES } from '../config/entityStats.js';
+
 export function drawMinimap() {
     if (!minimapCtx) return;
 
-    minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+    // Clear
+    minimapCtx.fillStyle = '#000';
+    minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
 
     const scaleX = minimapCanvas.width / (MAP_WIDTH * TILE_SIZE);
     const scaleY = minimapCanvas.height / (MAP_HEIGHT * TILE_SIZE);
 
+    // Draw terrain
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
-            minimapCtx.fillStyle = map[y][x].color;
-            minimapCtx.fillRect(x * TILE_SIZE * scaleX, y * TILE_SIZE * scaleY, TILE_SIZE * scaleX, TILE_SIZE * scaleY);
+            const tile = map[y][x];
+
+            if (tile.id === TILES.WATER.id) {
+                minimapCtx.fillStyle = '#1e90ff';
+            } else if (tile.id === TILES.TREE.id) {
+                minimapCtx.fillStyle = '#228b22';
+            } else if (tile.id === TILES.MOUNTAIN.id) {
+                minimapCtx.fillStyle = '#696969';
+            } else {
+                minimapCtx.fillStyle = '#2d5016';
+            }
+
+            // Draw slightly larger to avoid gaps
+            minimapCtx.fillRect(
+                Math.floor(x * TILE_SIZE * scaleX),
+                Math.floor(y * TILE_SIZE * scaleY),
+                Math.ceil(TILE_SIZE * scaleX),
+                Math.ceil(TILE_SIZE * scaleY)
+            );
         }
     }
 
-    [...buildings, ...units].filter(e => !e.isDead).forEach(entity => {
-        const faction = Object.values(FACTIONS).find(f => f.id === entity.faction) || FACTIONS.NEUTRAL;
-        minimapCtx.fillStyle = faction.color;
+    // Draw buildings
+    buildings.forEach(b => {
+        if (b.isDead) return;
 
-        if (entity instanceof Unit) {
-            minimapCtx.beginPath();
-            minimapCtx.arc(entity.x * TILE_SIZE * scaleX, entity.y * TILE_SIZE * scaleY, 2, 0, Math.PI * 2);
-            minimapCtx.fill();
-        } else {
-            minimapCtx.fillRect(entity.x * TILE_SIZE * scaleX, entity.y * TILE_SIZE * scaleY, entity.stats.size * TILE_SIZE * scaleX, entity.stats.size * TILE_SIZE * scaleY);
-        }
+        const faction = Object.values(FACTIONS).find(f => f.id === b.faction);
+        minimapCtx.fillStyle = faction ? faction.color : '#888';
+        minimapCtx.fillRect(
+            Math.floor(b.x * TILE_SIZE * scaleX),
+            Math.floor(b.y * TILE_SIZE * scaleY),
+            Math.ceil(b.size * TILE_SIZE * scaleX),
+            Math.ceil(b.size * TILE_SIZE * scaleY)
+        );
     });
 
-    // Draw Camera View Rect
-    // We need to access canvas dimensions. Assuming camera stores viewport or we pass it.
-    // For now, we can't easily access main canvas dimensions here unless we store them.
-    // Let's assume standard viewport or export it from constants if fixed, or pass it.
-    // Actually, Camera.js doesn't store viewport size.
-    // Let's just skip the rect for now or use a fixed size assumption, or update Camera to store viewport.
+    // Draw units (dots)
+    units.forEach(u => {
+        if (u.isDead) return;
+
+        const faction = Object.values(FACTIONS).find(f => f.id === u.faction);
+        minimapCtx.fillStyle = faction ? faction.color : '#888';
+        minimapCtx.fillRect(
+            Math.floor(u.x * TILE_SIZE * scaleX),
+            Math.floor(u.y * TILE_SIZE * scaleY),
+            2,
+            2
+        );
+    });
+
+    // Draw camera viewport
+    // We need the main canvas dimensions to draw the viewport correctly
+    // Assuming a global canvas or passing it in would be better, but for now:
+    const viewportWidth = window.innerWidth - 400; // Approximate based on layout
+    const viewportHeight = window.innerHeight;
+
+    minimapCtx.strokeStyle = '#ffffff';
+    minimapCtx.lineWidth = 1;
+    minimapCtx.strokeRect(
+        Math.floor(camera.x * scaleX),
+        Math.floor(camera.y * scaleY),
+        Math.floor(viewportWidth * scaleX),
+        Math.floor(viewportHeight * scaleY)
+    );
 }

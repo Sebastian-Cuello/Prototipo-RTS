@@ -21,8 +21,8 @@ import { initMinimapRenderer } from './rendering/MinimapRenderer.js';
 import { initInput } from './input/InputManager.js';
 import { initUI } from './ui/UIManager.js';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from './config/constants.js';
-import { preloadBuildingAssets, preloadUnitAssets } from './utils/AssetLoader.js';
-import { BUILDING_STATS, UNIT_STATS } from './config/entityStats.js';
+import { preloadBuildingAssets, preloadUnitAssets, preloadTileAssets } from './utils/AssetLoader.js';
+import { BUILDING_STATS, UNIT_STATS, TILES } from './config/entityStats.js';
 
 
 /**
@@ -55,9 +55,13 @@ window.onload = async () => {
     console.log('🎨 Loading game assets...');
     await Promise.all([
         preloadBuildingAssets(BUILDING_STATS),
-        preloadUnitAssets(UNIT_STATS)
+        preloadUnitAssets(UNIT_STATS),
+        preloadTileAssets(TILES)
     ]);
     console.log('✅ All assets loaded!');
+
+    // Start Game Logic (Generates Map)
+    initGame();
 
     // Initialize Systems
     initUI();
@@ -65,7 +69,6 @@ window.onload = async () => {
     initMinimapRenderer(minimapCanvas, minimapCtx);
     initInput(canvas, minimapCanvas);
 
-    // Start Game
-    initGame();
+    // Start Loop
     startGameLoop();
 };
