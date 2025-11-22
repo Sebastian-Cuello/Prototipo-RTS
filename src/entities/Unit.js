@@ -30,6 +30,7 @@ import { gameState, spatialHash, pathfinder, buildings, units } from '../core/Ga
 import { logGameMessage } from '../utils/Logger.js';
 import { updateResourcesUI, updateSelectionPanel } from '../ui/UIManager.js';
 import { soundManager } from '../systems/SoundManager.js';
+import { renderer, updateTileRenderer } from '../rendering/Renderer.js';
 import Building from './Building.js';
 
 /**
@@ -236,6 +237,12 @@ export default class Unit extends Entity {
                 // Play attack sound
                 if (this.type === 'archer') soundManager.play('attack_bow');
                 else soundManager.play('attack_sword');
+
+                // Particle Effect
+                renderer.particleSystem.swordHit(
+                    this.targetEntity.x * 32, // TILE_SIZE
+                    this.targetEntity.y * 32
+                );
             }
         }
     }
@@ -359,7 +366,13 @@ export default class Unit extends Entity {
                 this.cargo = Math.min(this.cargo + 10, this.maxCargo);
 
                 if (this.resourceType === 'gold') soundManager.play('gather_gold');
-                else soundManager.play('gather_wood');
+                else {
+                    soundManager.play('gather_wood');
+                    // If tree is depleted (logic handled elsewhere? Assuming infinite for now or need to check)
+                    // If we modify the map tile (e.g. cut down tree), we must call updateTileRenderer
+                    // For now, let's assume trees don't disappear yet, but if they did:
+                    // updateTileRenderer(this.gatherTarget.x, this.gatherTarget.y);
+                }
             }
         } else {
             // Return to Town Hall
