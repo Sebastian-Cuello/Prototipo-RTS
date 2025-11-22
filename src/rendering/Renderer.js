@@ -26,10 +26,11 @@
  * - Efficient entity filtering
  */
 
-import { map, units, buildings, fogMap } from '../core/GameState.js';
+import { map, units, buildings, fogMap, gameState } from '../core/GameState.js';
 import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT } from '../config/constants.js';
 import { camera } from './Camera.js';
-import { FACTIONS, TILES, UNIT_STATS } from '../config/entityStats.js';
+import { FACTIONS, TILES, UNIT_STATS, BUILDING_STATS } from '../config/entityStats.js';
+import { getMousePosition } from '../input/InputManager.js';
 import Unit from '../entities/Unit.js';
 import Building from '../entities/Building.js';
 import { getBuildingImage, getUnitImage, getTileImage } from '../utils/AssetLoader.js';
@@ -204,6 +205,64 @@ function drawEntities(entitiesToDraw) {
             }
         }
     });
+};
+
+function drawRangeIndicators() {
+    gameState.selectedEntities.forEach(entity => {
+        if (entity.stats.range) {
+            ctx.strokeStyle = '#ffffff44';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(
+                entity.x * TILE_SIZE + TILE_SIZE / 2,
+                entity.y * TILE_SIZE + TILE_SIZE / 2,
+                entity.stats.range * TILE_SIZE,
+                0,
+                Math.PI * 2
+            );
+            ctx.stroke();
+        }
+    });
+}
+
+function drawBuildingGhost(mouseX, mouseY, buildingType) {
+    const stats = BUILDING_STATS[buildingType];
+    const tileX = Math.floor((mouseX + camera.x) / TILE_SIZE);
+    const tileY = Math.floor((mouseY + camera.y) / TILE_SIZE);
+
+    // Check if valid placement
+    let canBuild = true;
+    for (let y = 0; y < stats.size; y++) {
+        for (let x = 0; x < stats.size; x++) {
+            const tx = tileX + x;
+            const ty = tileY + y;
+            if (tx < 0 || tx >= MAP_WIDTH || ty < 0 || ty >= MAP_HEIGHT ||
+                !map[ty][tx].passable || map[ty][tx].id !== TILES.GRASS.id) {
+                canBuild = false;
+                break;
+            }
+        }
+    }
+
+    // Draw ghost
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = canBuild ? '#00ff0044' : '#ff000044';
+    ctx.fillRect(
+        tileX * TILE_SIZE,
+        tileY * TILE_SIZE,
+        stats.size * TILE_SIZE,
+        stats.size * TILE_SIZE
+    );
+    ctx.globalAlpha = 1.0;
+
+    // Draw name
+    ctx.fillStyle = canBuild ? '#00ff00' : '#ff0000';
+    ctx.font = '12px Arial';
+    ctx.fillText(
+        stats.name,
+        tileX * TILE_SIZE,
+        tileY * TILE_SIZE - 5
+    );
 }
 
 export function draw() {
@@ -262,6 +321,13 @@ export function draw() {
 
     drawEntities(buildings);
     drawEntities(units);
+
+    drawRangeIndicators();
+
+    if (gameState.buildingMode) {
+        const { x, y } = getMousePosition();
+        drawBuildingGhost(x, y, gameState.buildingMode);
+    }
 
     if (isDragging) {
         ctx.strokeStyle = '#00FF00';
