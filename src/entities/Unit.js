@@ -16,6 +16,7 @@
  * - Building construction with progress tracking
  * - Dynamic stat modification through upgrades
  * - Spatial hash integration for efficient collision detection
+ * - Visual feedback via Particle System (combat effects)
  * 
  * Unit Types:
  * - Peasant: Gathers resources and constructs buildings
@@ -26,7 +27,8 @@
 
 import Entity from './Entity.js';
 import { UNIT_STATS, BUILDING_STATS, UPGRADES, FACTIONS } from '../config/entityStats.js';
-import { gameState, spatialHash, pathfinder, buildings, units } from '../core/GameState.js';
+import { gameState, spatialHash, pathfinder, buildings, units, map } from '../core/GameState.js';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from '../config/constants.js';
 import { logGameMessage } from '../utils/Logger.js';
 import { updateResourcesUI, updateSelectionPanel } from '../ui/UIManager.js';
 import { soundManager } from '../systems/SoundManager.js';
@@ -88,6 +90,21 @@ export default class Unit extends Entity {
         this.patrolEnd = null;
         this.holdPosition = false;
         this.scanForEnemies = false;
+
+        // New Features Initialization
+        this.leashPoint = { x, y };
+        this.leashDistance = 15;
+        this.stance = 'aggressive'; // 'aggressive', 'defensive', 'passive', 'hold'
+        this.autoAcquireRange = 8;
+
+        this.experience = 0;
+        this.level = 1;
+        this.maxLevel = 3;
+        this.killCount = 0;
+
+        this.pathValidationTimer = 0;
+        this.gatherStuckTimer = 0;
+        this.hasPlayerCommand = false;
     }
 
     update() {
@@ -97,36 +114,60 @@ export default class Unit extends Entity {
         // 1. Attack Cooldown
         if (this.attackCooldown > 0) this.attackCooldown--;
         if (this.repathTimer > 0) this.repathTimer--;
+        if (this.pathValidationTimer > 0) this.pathValidationTimer--;
 
-        // 2. Unit Movement
+        // 2. Path Validation
+        if (this.isMoving && this.pathValidationTimer === 0) {
+            if (!this.isPathValid()) {
+                this.repath();
+            }
+            this.pathValidationTimer = 30; // Check every 1s
+        }
+
+        // 3. Unit Movement
         if (this.isMoving) {
             this.moveTowardsTarget();
         }
 
-        // 3. Attack Logic
+        // 4. Auto-Acquire Targets
+        if (!this.targetEntity && !this.isMoving && !this.isGathering && !this.isBuilding) {
+            if (this.stance === 'aggressive' || this.stance === 'defensive') {
+                const enemy = this.findNearestEnemy();
+                if (enemy) {
+                    const dist = Math.sqrt(
+                        Math.pow(enemy.x - this.x, 2) +
+                        Math.pow(enemy.y - this.y, 2)
+                    );
+
+                    if (dist < this.autoAcquireRange) {
+                        this.targetEntity = enemy;
+
+                        if (this.stance === 'aggressive') {
+                            // Chase target
+                            this.moveTo(enemy.getTileX(), enemy.getTileY(), enemy);
+                        }
+                        // Defensive stance: only attack if in range, don't chase
+                    }
+                }
+            }
+        }
+
+        // 5. Attack Logic
         if (this.targetEntity && !this.isMoving && !this.isGathering && !this.isBuilding) {
             this.engageTarget();
         }
 
-        // 4. Building Logic (Peasant only)
+        // 6. Building Logic (Peasant only)
         if (this.isBuilding && this.buildTarget) {
             this.build();
         }
 
-        // 5. Gathering Logic (Peasant only)
+        // 7. Gathering Logic (Peasant only)
         if (this.isGathering) {
             this.gatherResource();
         }
 
-        // 6. Smart Commands (Patrol & Attack Move)
-        if (this.scanForEnemies && !this.targetEntity) {
-            const enemy = this.findNearestEnemy();
-            if (enemy) {
-                this.targetEntity = enemy;
-                this.isMoving = false; // Stop moving to engage
-            }
-        }
-
+        // 8. Smart Commands (Patrol)
         if (this.isPatrolling && !this.isMoving && !this.targetEntity) {
             // Reached patrol end, go back to start
             const atEnd = Math.abs(this.x - this.patrolEnd.x) < 1 &&
@@ -136,114 +177,346 @@ export default class Unit extends Entity {
 
             if (atEnd) {
                 this.moveTo(this.patrolStart.x, this.patrolStart.y);
-                this.scanForEnemies = true; // Re-enable scan
             } else if (atStart) {
                 this.moveTo(this.patrolEnd.x, this.patrolEnd.y);
-                this.scanForEnemies = true; // Re-enable scan
+            }
+        }
+    }
+
+    isPathValid() {
+        // Check if next few nodes in path are still passable
+        if (!this.path || this.path.length === 0) return false;
+
+        for (let i = this.pathIndex; i < Math.min(this.pathIndex + 3, this.path.length); i++) {
+            const node = this.path[i];
+            const tx = Math.floor(node.x);
+            const ty = Math.floor(node.y);
+
+            if (tx < 0 || tx >= MAP_WIDTH || ty < 0 || ty >= MAP_HEIGHT) {
+                return false;
+            }
+
+            if (!map[ty][tx].passable) {
+                return false; // Path is blocked
+            }
+
+            // Check for buildings blocking path
+            const blocked = buildings.some(b =>
+                !b.isDead &&
+                tx >= b.x && tx < b.x + b.size &&
+                ty >= b.y && ty < b.y + b.size
+            );
+
+            if (blocked) return false;
+        }
+
+        return true;
+    }
+
+    repath() {
+        // console.log(`Unit ${this.type} repathing...`);
+        if (pathfinder) {
+            this.path = pathfinder.findPath(this.x, this.y, this.targetX, this.targetY);
+            this.pathIndex = 0;
+
+            if (this.path.length === 0) {
+                this.isMoving = false;
+                this.targetEntity = null;
             }
         }
     }
 
     moveTowardsTarget() {
-        if (this.path.length > 0 && this.pathIndex < this.path.length) {
-            const nextNode = this.path[this.pathIndex];
-            const dx = nextNode.x - this.x;
-            const dy = nextNode.y - this.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+        if (this.path.length === 0 || this.pathIndex >= this.path.length) {
+            this.isMoving = false;
+            return;
+        }
 
-            const speed = this.stats.speed * 0.03;
+        const nextNode = this.path[this.pathIndex];
+        const dx = nextNode.x - this.x;
+        const dy = nextNode.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist < speed) {
-                this.x = nextNode.x;
-                this.y = nextNode.y;
-                this.pathIndex++;
-                if (this.pathIndex >= this.path.length) {
-                    this.isMoving = false;
-                    this.path = [];
-                }
-            } else {
-                const angle = Math.atan2(dy, dx);
-                this.x += Math.cos(angle) * speed;
-                this.y += Math.sin(angle) * speed;
+        const speed = this.stats.speed * 0.03;
+
+        if (dist < speed) {
+            // Reached waypoint
+            this.x = nextNode.x;
+            this.y = nextNode.y;
+            this.pathIndex++;
+
+            if (this.pathIndex >= this.path.length) {
+                this.isMoving = false;
+                this.path = [];
             }
         } else {
-            // Fallback or direct move if no path (shouldn't happen if logic is correct)
-            // But if we are close to final target (e.g. attacking), we might want to stop or adjust
-            this.isMoving = false;
+            // Calculate desired velocity
+            let desiredAngle = Math.atan2(dy, dx);
+
+            // Check for nearby units and avoid
+            const avoidanceVector = this.calculateAvoidance();
+
+            if (avoidanceVector.magnitude > 0) {
+                // Blend desired direction with avoidance
+                const blendFactor = 0.3;
+                desiredAngle += avoidanceVector.angle * blendFactor;
+            }
+
+            // Move
+            this.x += Math.cos(desiredAngle) * speed;
+            this.y += Math.sin(desiredAngle) * speed;
         }
+    }
+
+    calculateAvoidance() {
+        const AVOIDANCE_RADIUS = 1.5;
+        const nearbyUnits = spatialHash ? spatialHash.query(this.x, this.y, AVOIDANCE_RADIUS) : [];
+
+        let avoidX = 0;
+        let avoidY = 0;
+        let count = 0;
+
+        nearbyUnits.forEach(other => {
+            if (other === this || other.isDead) return;
+            if (!(other instanceof Unit)) return;
+
+            const dx = this.x - other.x;
+            const dy = this.y - other.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < AVOIDANCE_RADIUS && dist > 0.1) {
+                // Avoid this unit
+                const strength = (AVOIDANCE_RADIUS - dist) / AVOIDANCE_RADIUS;
+                avoidX += (dx / dist) * strength;
+                avoidY += (dy / dist) * strength;
+                count++;
+            }
+        });
+
+        if (count === 0) {
+            return { magnitude: 0, angle: 0 };
+        }
+
+        avoidX /= count;
+        avoidY /= count;
+
+        const magnitude = Math.sqrt(avoidX * avoidX + avoidY * avoidY);
+        const angle = Math.atan2(avoidY, avoidX);
+
+        return { magnitude, angle };
     }
 
     // Simplified logic: move directly to the tile center
     moveTo(targetTileX, targetTileY, targetEntity = null) {
-        this.targetX = targetTileX + 0.5;
-        this.targetY = targetTileY + 0.5;
-        this.isMoving = true;
-        this.targetEntity = targetEntity;
+        const newTargetX = targetTileX + 0.5;
+        const newTargetY = targetTileY + 0.5;
 
-        // Reset other states unless specified
+        // Check if target changed significantly
+        const targetChanged = (
+            Math.abs(this.targetX - newTargetX) > 1 ||
+            Math.abs(this.targetY - newTargetY) > 1
+        );
+
+        // Only repath if needed
+        if (!this.isMoving || targetChanged || this.path.length === 0) {
+            this.targetX = newTargetX;
+            this.targetY = newTargetY;
+            this.targetEntity = targetEntity;
+            this.hasPlayerCommand = true; // Assume explicit move is player command
+
+            // Check if we're already at target
+            const distToTarget = Math.abs(this.targetX - this.x) + Math.abs(this.targetY - this.y);
+            if (distToTarget < 0.5) {
+                this.isMoving = false;
+                return;
+            }
+
+            // Calculate new path
+            if (pathfinder) {
+                this.path = pathfinder.findPath(this.x, this.y, this.targetX, this.targetY);
+                this.pathIndex = 0;
+
+                if (this.path.length === 0) {
+                    this.isMoving = false;
+                    // console.warn(`No path found for unit ${this.type} to (${this.targetX}, ${this.targetY})`);
+                } else {
+                    this.isMoving = true;
+                }
+            }
+        }
+
+        // Reset states
         if (!this.isBuilding) this.buildTarget = null;
         if (!this.isGathering) {
             this.gatherTarget = null;
             this.returnTarget = null;
         }
+    }
 
-        // Calculate Path
-        if (pathfinder) {
-            // Optimization: If we are already moving to this target and have a path, don't recalculate
-            // unless it's a new request or target moved significantly
-            const distToTarget = Math.abs(this.targetX - this.x) + Math.abs(this.targetY - this.y);
+    moveToWithFormation(targetTileX, targetTileY, formationOffset, targetEntity = null) {
+        // Apply formation offset
+        const finalX = targetTileX + formationOffset.x;
+        const finalY = targetTileY + formationOffset.y;
 
-            // Always pathfind if we have no path
-            // Or if we are far away (re-evaluate)
-            this.path = pathfinder.findPath(this.x, this.y, this.targetX, this.targetY);
-            this.pathIndex = 0;
-            if (this.path.length === 0) {
-                // No path found or already there
-                this.isMoving = false;
-            }
-        }
+        this.moveTo(finalX, finalY, targetEntity);
     }
 
     engageTarget() {
-        if (this.targetEntity.isDead) {
+        if (!this.targetEntity || this.targetEntity.isDead) {
             this.targetEntity = null;
             this.isMoving = false;
             return;
         }
 
-        // Check range again to be safe
-        const dist = Math.sqrt(Math.pow(this.targetEntity.x - this.x, 2) + Math.pow(this.targetEntity.y - this.y, 2));
+        const dist = Math.sqrt(
+            Math.pow(this.targetEntity.x - this.x, 2) +
+            Math.pow(this.targetEntity.y - this.y, 2)
+        );
 
-        // FIX: If target moved out of range, chase it!
+        // Check leash distance
+        const distFromLeash = Math.sqrt(
+            Math.pow(this.x - this.leashPoint.x, 2) +
+            Math.pow(this.y - this.leashPoint.y, 2)
+        );
+
+        if (distFromLeash > this.leashDistance && !this.isPlayerControlled()) {
+            // Too far from leash point, return
+            // console.log(`Unit ${this.type} returning to leash point`);
+            this.targetEntity = null;
+            this.moveTo(this.leashPoint.x, this.leashPoint.y);
+            return;
+        }
+
+        // Out of range, chase
         if (dist > this.stats.range + 0.5) {
-            // Only repath if timer is ready
             if (this.repathTimer === 0) {
-                this.moveTo(this.targetEntity.getTileX(), this.targetEntity.getTileY(), this.targetEntity);
-                this.repathTimer = 30; // Repath every 0.5 seconds approx
+                this.moveTo(
+                    this.targetEntity.getTileX(),
+                    this.targetEntity.getTileY(),
+                    this.targetEntity
+                );
+                this.repathTimer = 30;
             }
             return;
         }
 
+        // In range, attack
         if (this.attackCooldown === 0) {
-            this.attackCooldown = 30; // 1 second
-            this.targetEntity.health -= this.stats.attack;
+            this.performAttack();
+        }
+    }
 
-            if (this.targetEntity.health <= 0) {
-                this.targetEntity.die();
-                this.targetEntity = null;
-                this.isMoving = false;
+    isPlayerControlled() {
+        return this.faction === FACTIONS.PLAYER.id && this.hasPlayerCommand;
+    }
+
+    performAttack() {
+        this.attackCooldown = 30;
+        const damage = this.stats.attack;
+
+        this.targetEntity.health -= damage;
+
+        if (this.targetEntity.health <= 0) {
+            // Gain experience on kill
+            const expGain = this.targetEntity instanceof Building ? 50 : 25;
+            this.gainExperience(expGain);
+            this.killCount++;
+
+            this.targetEntity.die();
+            this.targetEntity = null;
+            this.isMoving = false;
+
+            if (this.faction === FACTIONS.PLAYER.id) {
                 logGameMessage(`${this.stats.name} destroyed the enemy!`);
+            }
+        } else {
+            // Play sound
+            if (this.type === 'archer') {
+                soundManager.playSpatial('attack_bow', this.x, this.y);
             } else {
-                // Play attack sound
-                if (this.type === 'archer') soundManager.play('attack_bow');
-                else soundManager.play('attack_sword');
+                soundManager.playSpatial('attack_sword', this.x, this.y);
+            }
 
-                // Particle Effect
+            // Particle effect
+            if (renderer && renderer.particleSystem) {
                 renderer.particleSystem.swordHit(
-                    this.targetEntity.x * 32, // TILE_SIZE
-                    this.targetEntity.y * 32
+                    this.targetEntity.x * TILE_SIZE,
+                    this.targetEntity.y * TILE_SIZE
                 );
             }
+        }
+    }
+
+    gainExperience(amount) {
+        this.experience += amount;
+
+        const expNeeded = this.level * 100;
+
+        if (this.experience >= expNeeded && this.level < this.maxLevel) {
+            this.levelUp();
+        }
+    }
+
+    levelUp() {
+        this.level++;
+        this.experience = 0;
+
+        // Apply stat bonuses
+        this.stats.maxHealth = Math.floor(this.stats.maxHealth * 1.15);
+        this.health = this.stats.maxHealth; // Full heal on level up
+        this.stats.attack = Math.floor(this.stats.attack * 1.1);
+
+        // Visual feedback
+        if (this.faction === FACTIONS.PLAYER.id) {
+            logGameMessage(`${this.stats.name} reached level ${this.level}! ⭐`);
+            soundManager.play('level_up');
+        }
+
+        // Particle effect
+        if (renderer && renderer.particleSystem) {
+            renderer.particleSystem.emit(
+                this.x * TILE_SIZE,
+                this.y * TILE_SIZE,
+                20,
+                { color: '#ffd700', size: 4, life: 40, spread: 3 }
+            );
+        }
+    }
+
+    findNearestEnemy() {
+        const nearbyEntities = spatialHash ? spatialHash.query(this.x, this.y, this.autoAcquireRange) : [];
+
+        let nearest = null;
+        let minDist = Infinity;
+
+        nearbyEntities.forEach(entity => {
+            if (entity === this || entity.isDead) return;
+            if (entity.faction === this.faction) return;
+            if (entity.faction === FACTIONS.NEUTRAL.id) return;
+
+            const dist = Math.sqrt(
+                Math.pow(entity.x - this.x, 2) +
+                Math.pow(entity.y - this.y, 2)
+            );
+
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = entity;
+            }
+        });
+
+        return nearest;
+    }
+
+    setStance(stance) {
+        this.stance = stance;
+
+        if (stance === 'hold') {
+            this.isMoving = false;
+            this.path = [];
+            this.holdPosition = true;
+        } else {
+            this.holdPosition = false;
         }
     }
 
@@ -322,102 +595,148 @@ export default class Unit extends Entity {
 
     startGathering(resourceType, targetX, targetY, targetEntity = null) {
         if (this.type !== 'peasant') return;
+
         this.isGathering = true;
         this.isBuilding = false;
         this.resourceType = resourceType;
-        // If gathering gold, target is the mine building
+        this.gatherStuckTimer = 0; // Anti-stuck timer
+
         if (resourceType === 'gold' && targetEntity) {
             this.gatherTarget = targetEntity;
         } else {
-            this.gatherTarget = { x: targetX, y: targetY }; // Simple object for tile target (wood)
+            this.gatherTarget = { x: targetX, y: targetY };
         }
+
         this.returnTarget = null;
+        this.cargo = 0; // Reset cargo
         this.moveTo(targetX, targetY);
     }
 
     gatherResource() {
+        // Anti-stuck mechanism
+        this.gatherStuckTimer++;
+
+        if (this.gatherStuckTimer > 300) { // 10 seconds
+            // console.warn(`Unit ${this.type} stuck gathering, resetting...`);
+            this.isGathering = false;
+            this.gatherTarget = null;
+            this.returnTarget = null;
+            this.cargo = 0;
+            this.gatherTimer = 0;
+            return;
+        }
+
         if (this.gatherTimer > 0) {
             this.gatherTimer--;
             return;
         }
 
+        // Validate gather target still exists
+        if (this.resourceType === 'gold') {
+            if (!this.gatherTarget || (this.gatherTarget instanceof Building && this.gatherTarget.isDead)) {
+                this.isGathering = false;
+                logGameMessage("Gold mine depleted or destroyed!");
+                return;
+            }
+        }
+
         if (this.cargo < this.maxCargo) {
-            // Go to resource
+            // Gather phase
             if (!this.gatherTarget) {
-                // Find nearest resource if target is lost/null
-                // (Simplified: just stop gathering if target lost)
                 this.isGathering = false;
                 return;
             }
 
-            const dist = Math.sqrt(Math.pow(this.gatherTarget.x - this.x, 2) + Math.pow(this.gatherTarget.y - this.y, 2));
+            const dist = Math.sqrt(
+                Math.pow(this.gatherTarget.x - this.x, 2) +
+                Math.pow(this.gatherTarget.y - this.y, 2)
+            );
 
-            // Interaction distance depends on target type
             let interactDist = 1.5;
             if (this.resourceType === 'gold' && this.gatherTarget instanceof Building) {
-                interactDist = this.gatherTarget.size / 2 + 1.0; // Building radius + reach
+                interactDist = this.gatherTarget.size / 2 + 1.0;
             }
 
             if (dist > interactDist) {
-                this.moveTo(this.gatherTarget.x, this.gatherTarget.y);
+                if (!this.isMoving) {
+                    this.moveTo(this.gatherTarget.x, this.gatherTarget.y);
+                }
             } else {
+                // Close enough to gather
                 this.isMoving = false;
-                this.gatherTimer = 60; // Gather time (2 seconds)
+                this.gatherTimer = 60;
                 this.cargo = Math.min(this.cargo + 10, this.maxCargo);
+                this.gatherStuckTimer = 0; // Reset stuck timer
 
-                if (this.resourceType === 'gold') soundManager.play('gather_gold');
-                else {
-                    soundManager.play('gather_wood');
-                    // If tree is depleted (logic handled elsewhere? Assuming infinite for now or need to check)
-                    // If we modify the map tile (e.g. cut down tree), we must call updateTileRenderer
-                    // For now, let's assume trees don't disappear yet, but if they did:
+                if (this.resourceType === 'gold') {
+                    soundManager.playSpatial('gather_gold', this.x, this.y);
+                } else {
+                    soundManager.playSpatial('gather_wood', this.x, this.y);
                     // updateTileRenderer(this.gatherTarget.x, this.gatherTarget.y);
                 }
             }
         } else {
-            // Return to Town Hall
+            // Return phase
             if (!this.returnTarget) {
-                // Find nearest Town Hall of MY faction
-                // FIX: Use this.faction directly
-                const townHalls = buildings.filter(b => !b.isDead && (b.type === 'townhall' || b.type === 'keep') && b.faction === this.faction);
-                let closest = null;
-                let minDst = Infinity;
+                const townHalls = buildings.filter(b =>
+                    !b.isDead &&
+                    (b.type === 'townhall' || b.type === 'keep') &&
+                    b.faction === this.faction
+                );
+
+                if (townHalls.length === 0) {
+                    this.isGathering = false;
+                    logGameMessage("No town hall to return resources!");
+                    return;
+                }
+
+                // Find closest town hall
+                let closest = townHalls[0];
+                let minDist = Infinity;
 
                 townHalls.forEach(th => {
-                    const d = Math.sqrt(Math.pow(th.x - this.x, 2) + Math.pow(th.y - this.y, 2));
-                    if (d < minDst) {
-                        minDst = d;
+                    const d = Math.sqrt(
+                        Math.pow(th.x - this.x, 2) +
+                        Math.pow(th.y - this.y, 2)
+                    );
+                    if (d < minDist) {
+                        minDist = d;
                         closest = th;
                     }
                 });
 
-                if (closest) {
-                    this.returnTarget = closest;
-                } else {
-                    // No town hall? Stop gathering.
-                    this.isGathering = false;
-                    return;
-                }
+                this.returnTarget = closest;
             }
 
-            const dist = Math.sqrt(Math.pow(this.returnTarget.x - this.x, 2) + Math.pow(this.returnTarget.y - this.y, 2));
-            if (dist > 2.5) { // Town hall is big
-                this.moveTo(this.returnTarget.x, this.returnTarget.y);
-            } else {
-                this.isMoving = false;
-                this.gatherTimer = 30; // Deposit time
+            const dist = Math.sqrt(
+                Math.pow(this.returnTarget.x - this.x, 2) +
+                Math.pow(this.returnTarget.y - this.y, 2)
+            );
 
-                // Deposit Resources
-                // FIX: Deposit into FACTION resources
+            if (dist > 2.5) {
+                if (!this.isMoving) {
+                    this.moveTo(this.returnTarget.x, this.returnTarget.y);
+                }
+            } else {
+                // Close enough to deposit
+                this.isMoving = false;
+                this.gatherTimer = 30;
+                this.gatherStuckTimer = 0; // Reset stuck timer
+
+                // Deposit resources
                 if (!gameState.factionResources[this.faction]) {
-                    // Initialize if missing (safety)
-                    gameState.factionResources[this.faction] = { gold: 0, wood: 0, stone: 0, foodUsed: 0, foodMax: 5 };
+                    gameState.factionResources[this.faction] = {
+                        gold: 0, wood: 0, stone: 0, foodUsed: 0, foodMax: 5
+                    };
                 }
 
-                if (this.resourceType === 'gold') gameState.factionResources[this.faction].gold += this.cargo;
-                else if (this.resourceType === 'wood') gameState.factionResources[this.faction].wood += this.cargo;
+                if (this.resourceType === 'gold') {
+                    gameState.factionResources[this.faction].gold += this.cargo;
+                } else if (this.resourceType === 'wood') {
+                    gameState.factionResources[this.faction].wood += this.cargo;
+                }
 
-                // Sync player resources for UI if this is the player
+                // Sync player UI
                 if (this.faction === FACTIONS.PLAYER.id) {
                     gameState.resources.gold = gameState.factionResources[this.faction].gold;
                     gameState.resources.wood = gameState.factionResources[this.faction].wood;
@@ -425,9 +744,9 @@ export default class Unit extends Entity {
                 }
 
                 this.cargo = 0;
-                this.returnTarget = null; // Find nearest again next time
+                this.returnTarget = null;
 
-                // Go back to resource
+                // Return to gather
                 if (this.gatherTarget) {
                     this.moveTo(this.gatherTarget.x, this.gatherTarget.y);
                 }

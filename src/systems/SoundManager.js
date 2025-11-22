@@ -1,6 +1,13 @@
 /**
- * @module SoundManager (REFACTORED)
+ * @module SoundManager
  * @description Professional audio management system
+ * 
+ * Features:
+ * - Category-based volume control (Music, SFX, Voice, Ambient)
+ * - Spatial Audio (3D sound positioning)
+ * - Audio Pooling (Efficient playback of frequent sounds)
+ * - Ducking (Auto-lowers music during important events)
+ * - Crossfading music tracks
  */
 
 export default class SoundManager {
@@ -312,9 +319,33 @@ export default class SoundManager {
         } = options;
 
         try {
-            // Create nodes
+            // Get from pool
             const pooled = this.getFromPool(key);
-            const source = this.audioContext.createMediaElementSource(pooled);
+
+            // Ensure source node exists
+            if (!pooled._sourceNode) {
+                try {
+                    pooled._sourceNode = this.audioContext.createMediaElementSource(pooled);
+                } catch (e) {
+                    // If already connected, we might need to handle it, but usually checking _sourceNode is enough
+                    // unless it was connected elsewhere.
+                    // Fallback to non-spatial if we can't get a source
+                    console.warn('Could not create source node, falling back to normal play', e);
+                    this.play(key, options);
+                    return;
+                }
+            }
+
+            const source = pooled._sourceNode;
+
+            // Create new panner/gain for this instance
+            // Note: We must disconnect the source from previous connections if any
+            try {
+                source.disconnect();
+            } catch (e) {
+                // Ignore if not connected
+            }
+
             const panner = this.audioContext.createPanner();
             const gainNode = this.audioContext.createGain();
 
@@ -330,7 +361,7 @@ export default class SoundManager {
             panner.positionY.setValueAtTime(y, this.audioContext.currentTime);
             panner.positionZ.setValueAtTime(0, this.audioContext.currentTime);
 
-            // Connect
+            // Connect: Source -> Panner -> Gain -> Destination
             source.connect(panner);
             panner.connect(gainNode);
             gainNode.connect(this.audioContext.destination);
@@ -341,6 +372,13 @@ export default class SoundManager {
 
             // Play
             pooled.play().catch(e => { });
+
+            // Cleanup on end (optional but good for GC)
+            pooled.onended = () => {
+                pooled.inUse = false;
+                pooled.currentTime = 0;
+                // We don't necessarily need to disconnect here, we do it before next play
+            };
 
             return { source, panner, gainNode };
         } catch (e) {
@@ -579,6 +617,15 @@ export default class SoundManager {
             clone.category = sound.category;
             clone.baseVolume = sound.baseVolume;
             clone.inUse = false;
+
+            // Pre-create source node for spatial audio if context exists
+            if (this.audioContext) {
+                try {
+                    clone._sourceNode = this.audioContext.createMediaElementSource(clone);
+                } catch (e) {
+                    console.warn('Failed to create source node for pool item', e);
+                }
+            }
 
             clone.addEventListener('ended', () => {
                 clone.inUse = false;

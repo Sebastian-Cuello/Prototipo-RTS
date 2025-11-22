@@ -18,6 +18,11 @@ A real-time strategy (RTS) game built with vanilla JavaScript, HTML5 Canvas, and
 *   **Attack Waves**: Coordinated attacks with specific unit compositions.
 
 ### Technical Features
+*   **Advanced Rendering Engine**:
+    *   **Layer System**: Efficient caching for static terrain and fog layers.
+    *   **Viewport Culling**: Only renders entities visible on screen for high performance.
+    *   **Batch Rendering**: Optimized draw calls for units and buildings.
+    *   **Particle System**: Visual effects for combat and interactions.
 *   **Spatial Hashing**: Optimized collision detection and entity queries.
 *   **A* Pathfinding**: Efficient unit navigation with obstacle avoidance and throttling for performance.
 *   **Sound System**: Dynamic audio engine with background music and spatial sound effects.
@@ -61,6 +66,6 @@ src/
 
 ## 👨‍💻 Credits
 
-*   **Developer**: Sebastián Cuello
-*   **Version**: 0.7.0
+*   **Vibe Developer**: Sebastián Cuello
+*   **Version**: 0.8.0
 *   **Tools**: Antigravity AI, Gemini 3 Pro, Claude Sonnet 4.5

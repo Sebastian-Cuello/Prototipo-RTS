@@ -1,13 +1,13 @@
 /**
  * @module Renderer
- * @description Main game canvas rendering system (Refactored)
+ * @description High-performance game rendering system
  * 
  * Features:
  * - Layer System (Terrain, Fog, Entities, UI)
- * - Viewport Culling
- * - Batch Rendering
- * - Particle System
- * - Animation System (with fallback)
+ * - Viewport Culling (Only draws visible entities)
+ * - Batch Rendering (Groups draw calls by type)
+ * - Particle System (Visual effects)
+ * - Animation System (Spritesheet support with fallback)
  */
 
 import { map, units, buildings, fogMap, gameState } from '../core/GameState.js';
@@ -472,6 +472,22 @@ export default class Renderer {
                 }
 
                 this.queueHealthBar(b, x, y);
+
+                // Draw Veterancy Stars
+                if (b.level > 1) {
+                    const starCount = b.level - 1;
+                    const startX = x + (size - (starCount * 10)) / 2;
+
+                    this.ctx.fillStyle = '#ffd700';
+                    this.ctx.font = 'bold 12px Arial';
+                    this.ctx.shadowColor = 'black';
+                    this.ctx.shadowBlur = 2;
+
+                    for (let i = 0; i < starCount; i++) {
+                        this.ctx.fillText('★', startX + i * 10, y - 5);
+                    }
+                    this.ctx.shadowBlur = 0;
+                }
             });
         });
 

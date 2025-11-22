@@ -12,6 +12,7 @@
  * - Dynamic canvas sizing based on container dimensions
  * - Responsive layout handling
  * - Centralized initialization sequence
+ * - Asset Preloading (Units, Buildings, Tiles)
  * - Window resize support for responsive gameplay
  */
 
