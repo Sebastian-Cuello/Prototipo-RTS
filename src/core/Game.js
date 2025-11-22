@@ -13,10 +13,11 @@
  * 
  * Key Features:
  * - Fixed timestep for consistent game logic (30 updates/sec)
- * - Variable framerate rendering
+ * - Variable framerate rendering via new Renderer system
  * - Lag compensation to maintain smooth updates
  * - Keyboard-based camera movement (WASD/Arrow keys)
  * - Automatic entity cleanup (dead units/buildings)
+ * - Integrated Fog of War and Map updates
  */
 
 import { gameState, units, setUnits, buildings, setBuildings, aiControllers, setAIControllers } from './GameState.js';

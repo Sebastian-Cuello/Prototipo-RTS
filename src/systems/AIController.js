@@ -2,11 +2,6 @@
  * @module AIController
  * @description AI opponent controller with strategic behavior
  * 
- * LATEST CHANGES (2025-11-21):
- * - Implemented Attack Waves: AI attacks in structured waves (Soldiers, Archers, Knights).
- * - Implemented Building Limits: AI respects limits for farms, barracks, etc.
- * - Implemented Expansion: AI builds new bases near discovered gold mines.
- * 
  * This module manages AI faction behavior through a state machine approach:
  * - GROWTH: Economy expansion and building
  * - DEFENSE: Responding to nearby threats

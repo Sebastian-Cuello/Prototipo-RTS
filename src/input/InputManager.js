@@ -408,12 +408,16 @@ export function initInput(canvas, minimapCanvas) {
 
                 selectedUnits.forEach((unit, index) => {
                     const pos = positions[index];
+                    const offset = {
+                        x: pos.x - tileX,
+                        y: pos.y - tileY
+                    };
 
-                    // If attacking, all attack the target
+                    // If attacking, all attack the target but keep formation
                     if (targetEntity && targetEntity.faction !== FACTIONS.NEUTRAL.id) {
-                        unit.moveTo(targetEntity.x, targetEntity.y, targetEntity);
+                        unit.moveToWithFormation(targetEntity.x, targetEntity.y, offset, targetEntity);
                     } else {
-                        unit.moveTo(pos.x, pos.y);
+                        unit.moveToWithFormation(tileX, tileY, offset);
                     }
                 });
 
