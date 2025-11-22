@@ -29,7 +29,7 @@ import AIController from '../systems/AIController.js';
 import { FACTIONS } from '../config/entityStats.js';
 import { generateMap, spawnInitialEntities } from '../map/MapGenerator.js';
 import { camera } from '../rendering/Camera.js';
-import { keys, getMousePosition } from '../input/InputManager.js';
+import { keys, getMousePosition, updateCameraFromKeys } from '../input/InputManager.js';
 
 let lastTime = 0;
 let lag = 0;
@@ -38,10 +38,13 @@ let fpsTimer = 0;
 let actualFPS = 0;
 
 import { soundManager } from '../systems/SoundManager.js';
+import { preloadTileAssets } from '../utils/AssetLoader.js';
+import { TILES } from '../config/entityStats.js';
 
 export function initGame() {
     generateMap();
     spawnInitialEntities();
+    preloadTileAssets(TILES);
 
     // Initialize AI
     const ais = [];
@@ -113,20 +116,9 @@ function gameLoop(currentTime) {
     }
 
     // Update Camera
-    const speed = 10;
-    const edgeThreshold = 20;
-    const { x: mouseX, y: mouseY } = getMousePosition();
     const canvas = document.getElementById('gameCanvas');
-
-    if (keys['ArrowLeft'] || keys['KeyA'] || (mouseX < edgeThreshold && mouseX >= 0)) camera.x -= speed;
-    if (keys['ArrowRight'] || keys['KeyD'] || (canvas && mouseX > canvas.width - edgeThreshold && mouseX <= canvas.width)) camera.x += speed;
-    if (keys['ArrowUp'] || keys['KeyW'] || (mouseY < edgeThreshold && mouseY >= 0)) camera.y -= speed;
-    if (keys['ArrowDown'] || keys['KeyS'] || (canvas && mouseY > canvas.height - edgeThreshold && mouseY <= canvas.height)) camera.y += speed;
-
-    // Clamp Camera
     if (canvas) {
-        camera.x = Math.max(0, Math.min(camera.x, MAP_WIDTH * TILE_SIZE - canvas.width));
-        camera.y = Math.max(0, Math.min(camera.y, MAP_HEIGHT * TILE_SIZE - canvas.height));
+        updateCameraFromKeys(canvas);
     }
 
     requestAnimationFrame(gameLoop);

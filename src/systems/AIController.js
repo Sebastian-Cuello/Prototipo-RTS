@@ -23,20 +23,93 @@ import { MAP_WIDTH, MAP_HEIGHT } from '../config/constants.js';
  * @class AIController
  * @description Controls AI faction behavior and decision-making
  */
+const AI_PERSONALITIES = {
+    RUSHER: {
+        name: "Rusher",
+        economyFocus: 0.3,
+        militaryFocus: 0.7,
+        expansionThreshold: 8,
+        buildPriority: ['barracks', 'barracks', 'farm'],
+        preferredUnits: ['soldier', 'soldier', 'archer']
+    },
+    TURTLE: {
+        name: "Turtle",
+        economyFocus: 0.6,
+        militaryFocus: 0.4,
+        expansionThreshold: 20,
+        buildPriority: ['farm', 'guardtower', 'guardtower', 'barracks'],
+        preferredUnits: ['archer', 'soldier', 'knight']
+    },
+    BOOMER: {
+        name: "Boomer",
+        economyFocus: 0.8,
+        militaryFocus: 0.2,
+        expansionThreshold: 15,
+        buildPriority: ['farm', 'farm', 'lumbermill', 'barracks'],
+        preferredUnits: ['knight', 'archer', 'soldier']
+    },
+    AGGRESSIVE: {
+        name: "Aggressive",
+        economyFocus: 0.5,
+        militaryFocus: 0.5,
+        expansionThreshold: 12,
+        buildPriority: ['barracks', 'farm', 'blacksmith'],
+        preferredUnits: ['soldier', 'archer', 'knight']
+    }
+};
+
 export default class AIController {
-    constructor(factionId) {
+    constructor(factionId, difficulty = 'NORMAL') {
         this.factionId = factionId;
-        this.state = 'GROWTH'; // GROWTH, DEFENSE, ATTACK, SCOUT, EXPAND
+        this.difficulty = difficulty;
+
+        // Select random personality
+        const personalities = Object.keys(AI_PERSONALITIES);
+        const randomPersonality = personalities[Math.floor(Math.random() * personalities.length)];
+        this.personality = JSON.parse(JSON.stringify(AI_PERSONALITIES[randomPersonality])); // Deep copy
+
+        // Difficulty adjustments
+        this.reactionTime = difficulty === 'HARD' ? 10 : difficulty === 'EASY' ? 30 : 15;
+        this.microManagement = difficulty === 'HARD';
+
+        console.log(`AI ${factionId} initialized as: ${this.personality.name} (${difficulty})`);
+
+        this.state = 'GROWTH';
         this.timer = 0;
         this.waveIndex = 0;
         this.lastAttackTime = 0;
         this.expansionTarget = null;
+
+        // New attributes
+        this.knownEnemyLocations = [];
+        this.lastScoutTime = 0;
+        this.strategyTimer = 0;
+        this.failedAttacks = 0;
+
+        // Scouting Memory
+        this.explorationGrid = this.initializeExplorationGrid();
+    }
+
+    initializeExplorationGrid() {
+        const GRID_SIZE = 15;
+        const grid = [];
+
+        for (let y = 0; y < MAP_HEIGHT; y += GRID_SIZE) {
+            for (let x = 0; x < MAP_WIDTH; x += GRID_SIZE) {
+                grid.push({
+                    x: x + GRID_SIZE / 2,
+                    y: y + GRID_SIZE / 2,
+                    lastSeen: 0,
+                    timesVisited: 0
+                });
+            }
+        }
+
+        return grid;
     }
 
     update() {
         this.timer++;
-        if (this.timer < 15) return; // Update every ~0.5 seconds
-        this.timer = 0;
 
         const myUnits = units.filter(u => !u.isDead && u.faction === this.factionId);
         const myBuildings = buildings.filter(b => !b.isDead && b.faction === this.factionId);
@@ -47,19 +120,95 @@ export default class AIController {
         }
         const resources = gameState.factionResources[this.factionId];
 
-        this.handleDefense(myUnits, myBuildings);
-        this.handleEconomy(myUnits, myBuildings, resources);
-        this.handleBuildings(myUnits, myBuildings, resources);
-        this.handleArmy(myUnits, myBuildings, resources);
-        this.handleAttack(myUnits, myBuildings);
-        this.handleExpansion(myUnits, myBuildings, resources);
-        this.handleScouting(myUnits, myBuildings);
+        // Staggered Updates
 
-        // Debug Log (every ~5 seconds)
-        if (this.timer % 150 === 0) {
-            console.log(`AI ${this.factionId} Resources: Gold ${resources.gold}, Wood ${resources.wood}, Food ${resources.foodUsed}/${resources.foodMax}`);
-            console.log(`AI ${this.factionId} State: ${this.state}, Army: ${myUnits.filter(u => u.type !== 'peasant').length}`);
+        // Combat Micro (Every frame if enabled)
+        if (this.microManagement) {
+            this.handleCombatMicro(myUnits);
+
+            // Formations (Less frequent)
+            if (this.timer % 60 === 0) {
+                const army = myUnits.filter(u => u.type !== 'peasant');
+                this.handleCombatFormation(army);
+            }
         }
+
+        // Defense & Raids (Fast: ~0.5s)
+        if (this.timer % this.reactionTime === 0) {
+            this.handleDefense(myUnits, myBuildings);
+            this.detectAndRespondToRaids(myUnits, myBuildings);
+        }
+
+        // Economy & Army (Medium: ~1s)
+        if (this.timer % 30 === 0) {
+            this.handleEconomy(myUnits, myBuildings, resources);
+            this.handleArmy(myUnits, myBuildings, resources);
+        }
+
+        // Buildings & Attack (Slow: ~3s)
+        if (this.timer % 90 === 0) {
+            this.handleBuildings(myUnits, myBuildings, resources);
+            this.handleAttack(myUnits, myBuildings);
+        }
+
+        // Expansion & Scouting (Very Slow: ~5s)
+        if (this.timer % 150 === 0) {
+            this.handleExpansion(myUnits, myBuildings, resources);
+            this.handleScouting(myUnits, myBuildings);
+        }
+
+        // Strategy Adaptation (Ultra Slow: ~10s)
+        if (this.timer % 300 === 0) {
+            this.adaptStrategy(myUnits, myBuildings, resources);
+
+            // Debug Log
+            console.log(`AI ${this.factionId} [${this.personality.name}] Res: G${resources.gold} W${resources.wood} F${resources.foodUsed}/${resources.foodMax} State: ${this.state}`);
+        }
+    }
+
+    adaptStrategy(myUnits, myBuildings, resources) {
+        const army = myUnits.filter(u => u.type !== 'peasant');
+        const peasants = myUnits.filter(u => u.type === 'peasant');
+
+        // Economic Health
+        const goldRate = resources.gold / (peasants.length || 1);
+        const isEconomyStrong = goldRate > 20 && peasants.length > 10;
+        const isEconomyWeak = goldRate < 10 || peasants.length < 5;
+
+        // Pressure
+        const nearbyEnemies = this.detectNearbyThreats(myBuildings);
+        const isUnderPressure = nearbyEnemies.length > 3;
+
+        if (isUnderPressure && !isEconomyStrong) {
+            // Emergency Defense
+            this.personality.militaryFocus = 0.8;
+            this.personality.economyFocus = 0.2;
+            // console.log(`AI ${this.factionId}: Emergency Defense Mode`);
+        } else if (isEconomyWeak && !isUnderPressure) {
+            // Recover Economy
+            this.personality.economyFocus = 0.7;
+            this.personality.militaryFocus = 0.3;
+            // console.log(`AI ${this.factionId}: Economy Recovery Mode`);
+        } else if (isEconomyStrong && army.length > 15) {
+            // Prepare Attack
+            this.personality.militaryFocus = 0.7;
+            this.personality.economyFocus = 0.3;
+            // console.log(`AI ${this.factionId}: Offensive Mode`);
+        }
+    }
+
+    detectNearbyThreats(myBuildings) {
+        const threats = [];
+        const enemies = units.filter(u => !u.isDead && u.faction !== this.factionId && u.faction !== FACTIONS.NEUTRAL.id);
+
+        myBuildings.forEach(b => {
+            enemies.forEach(e => {
+                if (Math.abs(e.x - b.x) < 15 && Math.abs(e.y - b.y) < 15) {
+                    if (!threats.includes(e)) threats.push(e);
+                }
+            });
+        });
+        return threats;
     }
 
     handleDefense(myUnits, myBuildings) {
@@ -85,6 +234,238 @@ export default class AIController {
         } else if (this.state === 'DEFENSE') {
             this.state = 'GROWTH';
         }
+    }
+
+    handleCombatMicro(myUnits) {
+        const army = myUnits.filter(u => u.type !== 'peasant');
+
+        // Cache de enemigos visibles para evitar recalcular
+        const visibleEnemiesCache = new Map();
+
+        const getVisibleForUnit = (unit) => {
+            const key = `${Math.floor(unit.x)},${Math.floor(unit.y)}`;
+            if (!visibleEnemiesCache.has(key)) {
+                visibleEnemiesCache.set(key, this.getVisibleEnemies(unit));
+            }
+            return visibleEnemiesCache.get(key);
+        };
+
+        // Separar por rol
+        const archers = army.filter(u => u.type === 'archer');
+        const melee = army.filter(u => u.type === 'soldier' || u.type === 'knight');
+
+        // Aplicar micro a TODOS, no solo los que atacan
+        archers.forEach(archer => {
+            this.handleKiting(archer);
+
+            const visibleEnemies = getVisibleForUnit(archer);
+            if (visibleEnemies.length > 0) {
+                const bestTarget = this.selectPriorityTarget(archer, visibleEnemies, true); // Include buildings for archers
+                if (bestTarget) {
+                    // Solo cambiar target si el nuevo es MUCHO mejor
+                    if (!archer.targetEntity || archer.targetEntity.isDead ||
+                        this.shouldSwitchTarget(archer, bestTarget)) {
+                        archer.attackTarget(bestTarget);
+                    }
+                }
+            }
+        });
+
+        // Melee también necesita micro
+        melee.forEach(unit => {
+            const visibleEnemies = getVisibleForUnit(unit);
+            if (visibleEnemies.length > 0) {
+                const bestTarget = this.selectPriorityTarget(unit, visibleEnemies);
+                if (bestTarget && (!unit.targetEntity || unit.targetEntity.isDead)) {
+                    unit.attackTarget(bestTarget);
+                }
+            }
+        });
+    }
+
+    handleCombatFormation(army) {
+        if (!this.microManagement || army.length < 6 || 
+       (this.state !== 'ATTACK' && this.state !== 'DEFENSE')) return;
+
+        const archers = army.filter(u => u.type === 'archer');
+        const melee = army.filter(u => u.type === 'soldier' || u.type === 'knight');
+
+        if (archers.length === 0 || melee.length === 0) return;
+
+        // Calcular centro del ejército
+        const avgX = army.reduce((sum, u) => sum + u.x, 0) / army.length;
+        const avgY = army.reduce((sum, u) => sum + u.y, 0) / army.length;
+
+        // Encontrar dirección hacia enemigos más cercanos
+        const nearestEnemy = units.find(u =>
+            !u.isDead &&
+            u.faction !== this.factionId &&
+            u.faction !== FACTIONS.NEUTRAL.id
+        );
+
+        if (!nearestEnemy) return;
+
+        const angleToEnemy = Math.atan2(nearestEnemy.y - avgY, nearestEnemy.x - avgX);
+
+        // Solo reposicionar unidades si están muy dispersas y no en combate
+        melee.forEach((unit, idx) => {
+            if (unit.targetEntity || unit.isAttacking) return; // No interrumpir combate
+
+            const spread = 0.4;
+            const angle = angleToEnemy + (idx - melee.length / 2) * spread;
+            const formationX = avgX + Math.cos(angle) * 2;
+            const formationY = avgY + Math.sin(angle) * 2;
+
+            const dist = Math.abs(unit.x - formationX) + Math.abs(unit.y - formationY);
+            if (dist > 5) {
+                unit.moveTo(formationX, formationY);
+            }
+        });
+
+        archers.forEach((unit, idx) => {
+            if (unit.targetEntity || unit.isAttacking) return;
+
+            const spread = 0.4;
+            const angle = angleToEnemy + Math.PI + (idx - archers.length / 2) * spread;
+            const formationX = avgX + Math.cos(angle) * 5;
+            const formationY = avgY + Math.sin(angle) * 5;
+
+            const dist = Math.abs(unit.x - formationX) + Math.abs(unit.y - formationY);
+            if (dist > 5) {
+                unit.moveTo(formationX, formationY);
+            }
+        });
+    }
+
+    handleKiting(unit) {
+        if (unit.type !== 'archer') return;
+
+        // Solo kite si hay enemigos MELEE cerca
+        const nearbyMelee = units.filter(u =>
+            !u.isDead &&
+            u.faction !== this.factionId &&
+            (u.type === 'soldier' || u.type === 'knight') &&
+            Math.abs(u.x - unit.x) < 3 && Math.abs(u.y - unit.y) < 3
+        );
+
+        if (nearbyMelee.length > 0) {
+            const enemy = nearbyMelee[0];
+
+            // Calcular dirección de escape
+            const angle = Math.atan2(unit.y - enemy.y, unit.x - enemy.x);
+            const retreatDistance = 4; // Mantenerse a distancia de ataque
+            let retreatX = unit.x + Math.cos(angle) * retreatDistance;
+            let retreatY = unit.y + Math.sin(angle) * retreatDistance;
+
+            // Validar posición
+            let rx = Math.floor(retreatX);
+            let ry = Math.floor(retreatY);
+
+            // Intentar dirección alternativa si está bloqueado
+            if (!(rx > 0 && rx < MAP_WIDTH && ry > 0 && ry < MAP_HEIGHT && map[ry][rx].passable)) {
+                // Probar ángulos alternativos (perpendiculares)
+                const altAngles = [angle + Math.PI / 2, angle - Math.PI / 2];
+                for (const altAngle of altAngles) {
+                    retreatX = unit.x + Math.cos(altAngle) * retreatDistance;
+                    retreatY = unit.y + Math.sin(altAngle) * retreatDistance;
+                    rx = Math.floor(retreatX);
+                    ry = Math.floor(retreatY);
+
+                    if (rx > 0 && rx < MAP_WIDTH && ry > 0 && ry < MAP_HEIGHT && map[ry][rx].passable) {
+                        break; // Encontramos una dirección válida
+                    }
+                }
+            }
+
+            if (rx > 0 && rx < MAP_WIDTH && ry > 0 && ry < MAP_HEIGHT &&
+                map[ry][rx].passable) {
+
+                // Moverse Y atacar al mismo tiempo (stutter step)
+                unit.moveTo(retreatX, retreatY);
+
+                // Si está en rango, disparar mientras retrocede
+                const dist = Math.abs(enemy.x - unit.x) + Math.abs(enemy.y - unit.y);
+                if (dist <= unit.stats.range) {
+                    unit.attackTarget(enemy);
+                }
+            }
+        }
+    }
+
+    shouldSwitchTarget(unit, newTarget) {
+        const currentTarget = unit.targetEntity;
+        if (!currentTarget || currentTarget.isDead) return true;
+
+        const currentScore = this.getTargetScore(unit, currentTarget);
+        const newScore = this.getTargetScore(unit, newTarget);
+
+        // Solo cambiar si el nuevo target es 50% mejor
+        return newScore > currentScore * 1.5;
+    }
+
+    getTargetScore(unit, target) {
+        const priorities = { 'peasant': 1, 'archer': 4, 'soldier': 2, 'knight': 3 };
+        const distance = Math.abs(target.x - unit.x) + Math.abs(target.y - unit.y);
+        const healthFactor = (1 - target.health / target.maxHealth);
+        const priority = priorities[target.type] || 1;
+
+        return priority * 10 + healthFactor * 5 - distance * 0.5;
+    }
+
+    selectPriorityTarget(unit, visibleEnemies, includeBuildings = false) {
+        const priorities = {
+            'peasant': 1,
+            'archer': 4,    // Kill high damage dealers first
+            'soldier': 2,
+            'knight': 3,
+            // Buildings
+            'farm': 2,
+            'barracks': 5,
+            'townhall': 10,
+            'guardtower': 3
+        };
+
+        let targets = visibleEnemies;
+
+        if (includeBuildings && this.state === 'ATTACK') {
+            const visibleBuildings = buildings.filter(b =>
+                !b.isDead &&
+                b.faction !== this.factionId &&
+                b.faction !== FACTIONS.NEUTRAL.id &&
+                Math.abs(b.x - unit.x) < unit.stats.range + 3 &&
+                Math.abs(b.y - unit.y) < unit.stats.range + 3
+            );
+            targets = [...visibleEnemies, ...visibleBuildings];
+        }
+
+        let bestTarget = null;
+        let bestScore = -Infinity;
+
+        targets.forEach(target => {
+            const distance = Math.abs(target.x - unit.x) + Math.abs(target.y - unit.y);
+            const healthFactor = (1 - target.health / target.maxHealth); // Prefer wounded
+            const priority = priorities[target.type] || 1;
+
+            // Score: Priority + Wounded - Distance penalty
+            const score = priority * 10 + healthFactor * 5 - distance * 0.5;
+
+            if (score > bestScore && distance <= unit.stats.range) {
+                bestScore = score;
+                bestTarget = target;
+            }
+        });
+
+        return bestTarget;
+    }
+
+    getVisibleEnemies(unit) {
+        const range = unit.stats.range + 2; // Slightly larger than attack range
+        return units.filter(u =>
+            !u.isDead &&
+            u.faction !== this.factionId &&
+            u.faction !== FACTIONS.NEUTRAL.id &&
+            Math.abs(u.x - unit.x) < range && Math.abs(u.y - unit.y) < range
+        );
     }
 
     handleEconomy(myUnits, myBuildings, resources) {
@@ -148,7 +529,7 @@ export default class AIController {
         const townHall = myBuildings.find(b => b.type === 'townhall' || b.type === 'keep');
         if (!townHall) return;
 
-        // Research Logic (Blacksmith)
+        // Research Logic
         const blacksmith = myBuildings.find(b => b.type === 'blacksmith' && !b.isBlueprint);
         if (blacksmith && blacksmith.stats.research) {
             blacksmith.stats.research.forEach(upgId => {
@@ -161,45 +542,44 @@ export default class AIController {
             });
         }
 
-        // Check Limits
-        const farmCount = myBuildings.filter(b => b.type === 'farm').length;
-        const barracksCount = myBuildings.filter(b => b.type === 'barracks').length;
-        const lumberMillCount = myBuildings.filter(b => b.type === 'lumbermill').length;
-        const blacksmithCount = myBuildings.filter(b => b.type === 'blacksmith').length;
-        const towerCount = myBuildings.filter(b => b.type === 'guardtower').length;
+        // Dynamic Build Order based on Personality
+        const buildOrder = this.personality.buildPriority;
 
-        // Build Logic with Limits
-        // 1. Farms (Priority if low food)
-        if (resources.foodMax - resources.foodUsed <= 6 && farmCount < AI_BUILDING_LIMITS.farm && !myBuildings.some(b => b.type === 'farm' && b.isBlueprint)) {
+        // Counts
+        const counts = {
+            farm: myBuildings.filter(b => b.type === 'farm').length,
+            barracks: myBuildings.filter(b => b.type === 'barracks').length,
+            lumbermill: myBuildings.filter(b => b.type === 'lumbermill').length,
+            blacksmith: myBuildings.filter(b => b.type === 'blacksmith').length,
+            guardtower: myBuildings.filter(b => b.type === 'guardtower').length
+        };
+
+        // 1. Always ensure food
+        if (resources.foodMax - resources.foodUsed <= 6 && counts.farm < AI_BUILDING_LIMITS.farm && !myBuildings.some(b => b.type === 'farm' && b.isBlueprint)) {
             this.tryBuild(peasants, resources, 'farm', townHall);
+            return;
         }
-        // 2. Barracks
-        else if (barracksCount < AI_BUILDING_LIMITS.barracks) {
-            this.tryBuild(peasants, resources, 'barracks', townHall);
+
+        // 2. Follow Personality Build Order
+        for (const type of buildOrder) {
+            if (counts[type] < AI_BUILDING_LIMITS[type]) {
+                // Check if we are already building one
+                if (!myBuildings.some(b => b.type === type && b.isBlueprint)) {
+                    this.tryBuild(peasants, resources, type, townHall);
+                    return;
+                }
+            }
         }
-        // 3. Farms (Fill up to limit)
-        else if (farmCount < AI_BUILDING_LIMITS.farm && farmCount < 3) { // Early game farms
-            this.tryBuild(peasants, resources, 'farm', townHall);
+
+        // 3. Fill remaining limits if resources abound
+        if (resources.gold > 500) {
+            if (counts.barracks < AI_BUILDING_LIMITS.barracks) this.tryBuild(peasants, resources, 'barracks', townHall);
+            else if (counts.farm < AI_BUILDING_LIMITS.farm) this.tryBuild(peasants, resources, 'farm', townHall);
         }
-        // 4. Lumber Mill
-        else if (lumberMillCount < AI_BUILDING_LIMITS.lumbermill) {
-            this.tryBuild(peasants, resources, 'lumbermill', townHall);
-        }
-        // 5. Blacksmith
-        else if (blacksmithCount < AI_BUILDING_LIMITS.blacksmith) {
-            this.tryBuild(peasants, resources, 'blacksmith', townHall);
-        }
-        // 6. Towers
-        else if (towerCount < AI_BUILDING_LIMITS.guardtower) {
-            this.tryBuild(peasants, resources, 'guardtower', townHall);
-        }
-        // 7. Upgrade Town Hall
-        else if (townHall.type === 'townhall') {
+
+        // 4. Upgrade Town Hall
+        if (townHall.type === 'townhall' && resources.gold > 1000) {
             townHall.upgrade();
-        }
-        // 8. More Farms (Late game)
-        else if (farmCount < AI_BUILDING_LIMITS.farm) {
-            this.tryBuild(peasants, resources, 'farm', townHall);
         }
     }
 
@@ -209,100 +589,165 @@ export default class AIController {
 
         const army = myUnits.filter(u => u.type !== 'peasant');
 
-        // Determine target composition based on current Wave
-        const waveConfig = AI_WAVE_CONFIG[Math.min(this.waveIndex, AI_WAVE_CONFIG.length - 1)];
-
-        // Count current units
-        const soldiers = army.filter(u => u.type === 'soldier').length;
-        const archers = army.filter(u => u.type === 'archer').length;
-        const knights = army.filter(u => u.type === 'knight').length;
-
-        // Decide what to train to meet wave requirements
+        // Counter Unit Logic
+        const counterUnit = this.analyzeEnemyComposition();
         let trainType = null;
 
-        // If we haven't met the wave requirements yet, train for the wave
-        if (soldiers < waveConfig.soldiers) trainType = 'soldier';
-        else if (archers < waveConfig.archers) trainType = 'archer';
-        else if (knights < waveConfig.knights) trainType = 'knight';
+        // 30% chance to train counter unit if identified
+        if (counterUnit && Math.random() < 0.3) {
+            trainType = counterUnit;
+        } else {
+            // Use Wave Config but adjusted by personality preferences
+            const waveConfig = AI_WAVE_CONFIG[Math.min(this.waveIndex, AI_WAVE_CONFIG.length - 1)];
+            const soldiers = army.filter(u => u.type === 'soldier').length;
+            const archers = army.filter(u => u.type === 'archer').length;
+            const knights = army.filter(u => u.type === 'knight').length;
 
-        // If wave requirements met, just train a balanced mix to fill supply
-        if (!trainType) {
-            const total = army.length || 1;
-            if (archers / total < 0.4) trainType = 'archer';
-            else if (soldiers / total < 0.4) trainType = 'soldier';
-            else trainType = 'knight';
+            if (soldiers < waveConfig.soldiers) trainType = 'soldier';
+            else if (archers < waveConfig.archers) trainType = 'archer';
+            else if (knights < waveConfig.knights) trainType = 'knight';
+            else {
+                // Train preferred unit
+                const preferred = this.personality.preferredUnits;
+                trainType = preferred[Math.floor(Math.random() * preferred.length)];
+            }
         }
 
         const cost = UNIT_STATS[trainType].cost;
         if (resources.gold >= cost.gold && resources.wood >= (cost.wood || 0)) {
-            // Find a barracks that isn't busy (simple check)
             const barracks = barracksList[Math.floor(Math.random() * barracksList.length)];
             barracks.trainUnit(trainType);
         }
+    }
+
+    analyzeEnemyComposition() {
+        const enemyUnits = units.filter(u => !u.isDead && u.faction !== this.factionId && u.faction !== FACTIONS.NEUTRAL.id);
+        if (enemyUnits.length === 0) return null;
+
+        const soldiers = enemyUnits.filter(u => u.type === 'soldier').length;
+        const archers = enemyUnits.filter(u => u.type === 'archer').length;
+        const knights = enemyUnits.filter(u => u.type === 'knight').length;
+
+        // Simple Rock-Paper-Scissors: Knight > Archer > Soldier > Knight
+        if (archers > soldiers && archers > knights) return 'knight';
+        if (knights > soldiers && knights > archers) return 'soldier'; // Cheap counter
+        if (soldiers > archers && soldiers > knights) return 'archer';
+
+        return null;
+    }
+
+    detectAndRespondToRaids(myUnits, myBuildings) {
+        const peasants = myUnits.filter(u => u.type === 'peasant');
+
+        peasants.forEach(peasant => {
+            const nearbyEnemies = units.filter(u =>
+                !u.isDead &&
+                u.faction !== this.factionId &&
+                u.faction !== FACTIONS.NEUTRAL.id &&
+                Math.abs(u.x - peasant.x) < 8 && Math.abs(u.y - peasant.y) < 8
+            );
+
+            if (nearbyEnemies.length > 0) {
+                // Raid Detected
+                // 1. Flee
+                const townHall = myBuildings.find(b => b.type === 'townhall' || b.type === 'keep');
+                if (townHall) {
+                    peasant.moveTo(townHall.x, townHall.y);
+                }
+
+                // 2. Call for help
+                const army = myUnits.filter(u => u.type !== 'peasant');
+                const nearbyDefenders = army.filter(u =>
+                    Math.abs(u.x - peasant.x) < 20 && Math.abs(u.y - peasant.y) < 20
+                ).slice(0, 5);
+
+                nearbyDefenders.forEach(defender => {
+                    if (!defender.targetEntity) defender.moveTo(nearbyEnemies[0].x, nearbyEnemies[0].y, nearbyEnemies[0]);
+                });
+            }
+        });
     }
 
     handleAttack(myUnits, myBuildings) {
         if (this.state === 'DEFENSE') return;
 
         const army = myUnits.filter(u => u.type !== 'peasant');
-        const waveConfig = AI_WAVE_CONFIG[Math.min(this.waveIndex, AI_WAVE_CONFIG.length - 1)];
+        const forceAttack = army.length >= this.personality.expansionThreshold;
 
-        // Check if we have enough units for the current wave
-        const soldiers = army.filter(u => u.type === 'soldier').length;
-        const archers = army.filter(u => u.type === 'archer').length;
-        const knights = army.filter(u => u.type === 'knight').length;
-
-        const readyForWave = soldiers >= waveConfig.soldiers &&
-            archers >= waveConfig.archers &&
-            knights >= waveConfig.knights;
-
-        // Attack if wave is ready OR if we have a large enough army (fallback)
-        // This prevents AI from getting stuck if it can't build specific units
-        const forceAttack = army.length >= 12;
-
-        if ((readyForWave || forceAttack) && this.state !== 'ATTACK') {
+        if (forceAttack && this.state !== 'ATTACK') {
             this.state = 'ATTACK';
-            if (readyForWave) this.waveIndex++; // Only advance wave if we actually met the requirements
+            this.waveIndex++;
         }
 
         if (this.state === 'ATTACK') {
-            // If army is decimated, retreat
             if (army.length < 3) {
                 this.state = 'GROWTH';
                 const townHall = myBuildings.find(b => b.type === 'townhall' || b.type === 'keep');
-                if (townHall) {
-                    army.forEach(u => u.moveTo(townHall.x, townHall.y));
-                }
+                if (townHall) army.forEach(u => u.moveTo(townHall.x, townHall.y));
                 return;
             }
 
-            // Target Selection
-            let target = null;
-            const playerBuildings = buildings.filter(b => !b.isDead && b.faction === FACTIONS.PLAYER.id);
-            const playerUnits = units.filter(u => !u.isDead && u.faction === FACTIONS.PLAYER.id);
-
-            target = playerBuildings.find(b => b.type === 'townhall' || b.type === 'keep') ||
-                playerBuildings[0] ||
-                playerUnits[0];
-
-            if (!target) {
-                // Fallback to other enemies
-                const enemies = [FACTIONS.ENEMY.id, FACTIONS.ALLY.id, FACTIONS.ENEMY_2.id].filter(id => id !== this.factionId);
-                const targetFactionId = enemies[Math.floor(Math.random() * enemies.length)];
-                const enemyBuildings = buildings.filter(b => !b.isDead && b.faction === targetFactionId);
-                target = enemyBuildings[0];
+            const targets = this.findMultipleTargets();
+            if (targets.length === 0) {
+                this.state = 'GROWTH';
+                return;
             }
 
-            if (target) {
+            // Dividir ejército BALANCEADAMENTE si es grande
+            if (army.length > 12 && targets.length > 1) {
+                const groups = this.createBalancedGroups(army, 2);
+
+                groups.forEach((group, idx) => {
+                    const target = targets[idx % targets.length];
+                    group.forEach(u => {
+                        if (!u.targetEntity && !u.isMoving) {
+                            u.moveTo(target.x, target.y, target);
+                        }
+                    });
+                });
+            } else {
+                // Ataque concentrado
+                const target = targets[0];
                 army.forEach(u => {
                     if (!u.targetEntity && !u.isMoving) {
                         u.moveTo(target.x, target.y, target);
                     }
                 });
-            } else {
-                this.state = 'GROWTH';
             }
         }
+    }
+
+    createBalancedGroups(army, numGroups) {
+        // Separar por tipo
+        const soldiers = army.filter(u => u.type === 'soldier');
+        const archers = army.filter(u => u.type === 'archer');
+        const knights = army.filter(u => u.type === 'knight');
+
+        const groups = Array.from({ length: numGroups }, () => []);
+
+        // Distribuir equitativamente cada tipo
+        [soldiers, archers, knights].forEach(unitType => {
+            unitType.forEach((unit, idx) => {
+                groups[idx % numGroups].push(unit);
+            });
+        });
+
+        return groups;
+    }
+
+    findMultipleTargets() {
+        const playerBuildings = buildings.filter(b => !b.isDead && b.faction === FACTIONS.PLAYER.id);
+        if (playerBuildings.length === 0) {
+            const playerUnits = units.filter(u => !u.isDead && u.faction === FACTIONS.PLAYER.id);
+            return playerUnits.length > 0 ? [playerUnits[0]] : [];
+        }
+
+        // Prioritize expansions (Town Halls) and Production
+        const expansions = playerBuildings.filter(b => b.type === 'townhall' || b.type === 'keep');
+        const production = playerBuildings.filter(b => b.type === 'barracks' || b.type === 'farm');
+
+        const targets = [...expansions, ...production, ...playerBuildings];
+        return [...new Set(targets)].slice(0, 2); // Return up to 2 unique targets
     }
 
     handleExpansion(myUnits, myBuildings, resources) {
@@ -352,20 +797,58 @@ export default class AIController {
     }
 
     handleScouting(myUnits, myBuildings) {
-        if (this.state !== 'ATTACK' && this.state !== 'DEFENSE') {
-            const army = myUnits.filter(u => u.type !== 'peasant');
-            const idleUnits = army.filter(u => !u.isMoving && !u.targetEntity && !u.isAttacking);
+        if (this.state === 'ATTACK' || this.state === 'DEFENSE') return;
 
-            idleUnits.forEach(unit => {
-                const scoutX = Math.floor(Math.random() * MAP_WIDTH);
-                const scoutY = Math.floor(Math.random() * MAP_HEIGHT);
-                if (scoutX >= 0 && scoutX < MAP_WIDTH && scoutY >= 0 && scoutY < MAP_HEIGHT) {
-                    if (map[scoutY][scoutX].passable) {
-                        unit.moveTo(scoutX, scoutY);
-                    }
-                }
-            });
-        }
+        const army = myUnits.filter(u => u.type !== 'peasant');
+        const scouts = army.filter(u => !u.isMoving && !u.targetEntity && !u.isAttacking).slice(0, 3);
+
+        // Actualizar grid con unidades visibles
+        myUnits.forEach(unit => {
+            this.updateExplorationGrid(unit.x, unit.y);
+        });
+
+        scouts.forEach(scout => {
+            // Encontrar área menos explorada
+            const targetArea = this.findLeastExploredArea(scout);
+
+            if (targetArea && map[Math.floor(targetArea.y)][Math.floor(targetArea.x)].passable) {
+                scout.moveTo(targetArea.x, targetArea.y);
+            }
+        });
+    }
+
+    updateExplorationGrid(x, y) {
+        const VISION_RANGE = 10;
+        const now = Date.now();
+
+        this.explorationGrid.forEach(cell => {
+            const dist = Math.abs(cell.x - x) + Math.abs(cell.y - y);
+            if (dist < VISION_RANGE) {
+                cell.lastSeen = now;
+                cell.timesVisited++;
+            }
+        });
+    }
+
+    findLeastExploredArea(scout) {
+        let best = null;
+        let lowestScore = Infinity;
+
+        this.explorationGrid.forEach(cell => {
+            // Priorizar áreas nunca vistas o vistas hace mucho
+            const timeSinceLastSeen = Date.now() - cell.lastSeen;
+            const distanceFromScout = Math.abs(cell.x - scout.x) + Math.abs(cell.y - scout.y);
+
+            // Score: tiempo sin ver - distancia - veces visitado
+            const score = -timeSinceLastSeen / 1000 + distanceFromScout * 2 + cell.timesVisited * 50;
+
+            if (score < lowestScore) {
+                lowestScore = score;
+                best = cell;
+            }
+        });
+
+        return best;
     }
 
     tryBuild(peasants, resources, type, nearBuilding) {

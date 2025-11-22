@@ -111,10 +111,49 @@ export function getUnitImage(unitType) {
     return unitImages[unitType] || null;
 }
 
+const tileImages = {};
+
 /**
- * Check if assets are loaded
- * @returns {boolean}
+ * Preload all tile images
+ * @param {Object} tiles - Tile definitions from entityStats
+ * @returns {Promise}
  */
+export function preloadTileAssets(tiles) {
+    const imagePromises = [];
+
+    for (const tileKey in tiles) {
+        const tile = tiles[tileKey];
+        // Map tile IDs to image paths (convention)
+        let imagePath = null;
+        if (tile.id === 0) imagePath = 'assets/tiles/grass.png';
+        else if (tile.id === 2) imagePath = 'assets/tiles/tree.png';
+
+        if (!imagePath) continue;
+
+        const img = new Image();
+        const promise = new Promise((resolve) => {
+            img.onload = () => {
+                tileImages[tile.id] = img;
+                console.log(`✓ Loaded tile image for ${tile.name}`);
+                resolve();
+            };
+            img.onerror = () => {
+                console.warn(`⚠ Failed to load tile image for ${tile.name}`);
+                tileImages[tile.id] = null;
+                resolve();
+            };
+            img.src = imagePath;
+        });
+        imagePromises.push(promise);
+    }
+
+    return Promise.all(imagePromises);
+}
+
+export function getTileImage(tileId) {
+    return tileImages[tileId] || null;
+}
+
 export function areAssetsLoaded() {
     return assetsLoaded;
 }

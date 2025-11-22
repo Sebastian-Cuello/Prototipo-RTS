@@ -80,6 +80,13 @@ export default class Unit extends Entity {
         this.path = [];
         this.pathIndex = 0;
         this.repathTimer = 0;
+
+        // Smart Commands
+        this.isPatrolling = false;
+        this.patrolStart = null;
+        this.patrolEnd = null;
+        this.holdPosition = false;
+        this.scanForEnemies = false;
     }
 
     update() {
@@ -108,6 +115,31 @@ export default class Unit extends Entity {
         // 5. Gathering Logic (Peasant only)
         if (this.isGathering) {
             this.gatherResource();
+        }
+
+        // 6. Smart Commands (Patrol & Attack Move)
+        if (this.scanForEnemies && !this.targetEntity) {
+            const enemy = this.findNearestEnemy();
+            if (enemy) {
+                this.targetEntity = enemy;
+                this.isMoving = false; // Stop moving to engage
+            }
+        }
+
+        if (this.isPatrolling && !this.isMoving && !this.targetEntity) {
+            // Reached patrol end, go back to start
+            const atEnd = Math.abs(this.x - this.patrolEnd.x) < 1 &&
+                Math.abs(this.y - this.patrolEnd.y) < 1;
+            const atStart = Math.abs(this.x - this.patrolStart.x) < 1 &&
+                Math.abs(this.y - this.patrolStart.y) < 1;
+
+            if (atEnd) {
+                this.moveTo(this.patrolStart.x, this.patrolStart.y);
+                this.scanForEnemies = true; // Re-enable scan
+            } else if (atStart) {
+                this.moveTo(this.patrolEnd.x, this.patrolEnd.y);
+                this.scanForEnemies = true; // Re-enable scan
+            }
         }
     }
 

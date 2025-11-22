@@ -1,26 +1,69 @@
 /**
  * @module Pathfinder
- * @description A* pathfinding algorithm implementation
+ * @description A* pathfinding algorithm implementation with optimizations
  * 
  * This module provides intelligent pathfinding for unit movement:
  * - A* algorithm for optimal path calculation
- * - Tile-based navigation
+ * - Tile-based navigation with diagonal movement
  * - Obstacle avoidance (trees, mountains, buildings)
- * - Heuristic-based path optimization
+ * - MinHeap for performance (O(1) retrieval)
+ * - Path caching to reduce redundant calculations
+ * - Octile distance heuristic
  * 
  * Key Features:
- * - A* pathfinding with Manhattan distance heuristic
- * - Configurable tile passability checks
- * - Efficient open/closed set management
- * - Path reconstruction from goal to start
- * - Diagonal movement support
- * 
- * Algorithm Details:
- * - Uses priority queue (sorted by f-score = g-score + heuristic)
- * - Manhattan distance heuristic for grid-based movement
- * - Considers tile passability from TILES definitions
- * - Returns array of tile coordinates from start to goal
+ * - 8-directional movement (cardinal + diagonal)
+ * - Corner cutting prevention
+ * - Path caching mechanism
+ * - Efficient priority queue (MinHeap)
  */
+
+class MinHeap {
+    constructor() {
+        this.heap = [];
+    }
+
+    push(node) {
+        this.heap.push(node);
+        this.bubbleUp(this.heap.length - 1);
+    }
+
+    pop() {
+        if (this.heap.length === 0) return null;
+        if (this.heap.length === 1) return this.heap.pop();
+        const min = this.heap[0];
+        this.heap[0] = this.heap.pop();
+        this.bubbleDown(0);
+        return min;
+    }
+
+    bubbleUp(idx) {
+        while (idx > 0) {
+            const parent = Math.floor((idx - 1) / 2);
+            if (this.heap[idx].f >= this.heap[parent].f) break;
+            [this.heap[idx], this.heap[parent]] = [this.heap[parent], this.heap[idx]];
+            idx = parent;
+        }
+    }
+
+    bubbleDown(idx) {
+        while (true) {
+            let smallest = idx;
+            const left = 2 * idx + 1;
+            const right = 2 * idx + 2;
+
+            if (left < this.heap.length && this.heap[left].f < this.heap[smallest].f)
+                smallest = left;
+            if (right < this.heap.length && this.heap[right].f < this.heap[smallest].f)
+                smallest = right;
+            if (smallest === idx) break;
+
+            [this.heap[idx], this.heap[smallest]] = [this.heap[smallest], this.heap[idx]];
+            idx = smallest;
+        }
+    }
+
+    get length() { return this.heap.length; }
+}
 
 /**
  * @class Pathfinder
@@ -32,14 +75,40 @@ export default class Pathfinder {
         this.height = mapHeight;
         this.tiles = tiles;
         this.map = map; // Reference to the game map (2D array of tile objects)
+        this.pathCache = new Map();
+        this.cacheMaxSize = 500;
     }
 
-    findPath(startX, startY, endX, endY) {
-        // Simple A* implementation
-        const startNode = { x: Math.floor(startX), y: Math.floor(startY), g: 0, h: 0, f: 0, parent: null };
-        const endNode = { x: Math.floor(endX), y: Math.floor(endY) };
+    findPath(startX, startY, endX, endY, useCache = true) {
+        const sX = Math.floor(startX);
+        const sY = Math.floor(startY);
+        const eX = Math.floor(endX);
+        const eY = Math.floor(endY);
 
-        if (startNode.x === endNode.x && startNode.y === endNode.y) return [];
+        if (sX === eX && sY === eY) return [];
+
+        const key = `${sX},${sY}-${eX},${eY}`;
+
+        if (useCache && this.pathCache.has(key)) {
+            return [...this.pathCache.get(key)]; // Return clone
+        }
+
+        const path = this._computePath(sX, sY, eX, eY);
+
+        if (useCache && path.length > 0) {
+            if (this.pathCache.size >= this.cacheMaxSize) {
+                const firstKey = this.pathCache.keys().next().value;
+                this.pathCache.delete(firstKey);
+            }
+            this.pathCache.set(key, path);
+        }
+
+        return path;
+    }
+
+    _computePath(startX, startY, endX, endY) {
+        const startNode = { x: startX, y: startY, g: 0, h: 0, f: 0, parent: null };
+        const endNode = { x: endX, y: endY };
 
         // Check if end is passable
         if (!this.isPassable(endNode.x, endNode.y)) {
@@ -64,26 +133,22 @@ export default class Pathfinder {
             }
         }
 
-        const openList = [];
+        const openList = new MinHeap();
         const closedList = new Set();
+        const openSet = new Map(); // For fast lookup
 
         openList.push(startNode);
+        openSet.set(`${startNode.x},${startNode.y}`, startNode);
 
         let iterations = 0;
-        const MAX_ITERATIONS = 1000; // Safety break
+        const MAX_ITERATIONS = 2000; // Increased limit for complex paths
 
         while (openList.length > 0) {
             iterations++;
-            if (iterations > MAX_ITERATIONS) return []; // Path too complex or stuck
+            if (iterations > MAX_ITERATIONS) return [];
 
-            // Get node with lowest f
-            let lowInd = 0;
-            for (let i = 0; i < openList.length; i++) {
-                if (openList[i].f < openList[lowInd].f) {
-                    lowInd = i;
-                }
-            }
-            let currentNode = openList[lowInd];
+            const currentNode = openList.pop();
+            openSet.delete(`${currentNode.x},${currentNode.y}`);
 
             // End case
             if (currentNode.x === endNode.x && currentNode.y === endNode.y) {
@@ -93,39 +158,42 @@ export default class Pathfinder {
                     ret.push({ x: curr.x + 0.5, y: curr.y + 0.5 }); // Center of tile
                     curr = curr.parent;
                 }
-                return ret.reverse();
+                return this.smoothPath(ret.reverse());
             }
 
-            // Move current from open to closed
-            openList.splice(lowInd, 1);
             closedList.add(`${currentNode.x},${currentNode.y}`);
 
             const neighbors = this.getNeighbors(currentNode);
 
-            for (let i = 0; i < neighbors.length; i++) {
-                const neighbor = neighbors[i];
-
+            for (let neighbor of neighbors) {
                 if (closedList.has(`${neighbor.x},${neighbor.y}`) || !this.isPassable(neighbor.x, neighbor.y)) {
                     continue;
                 }
 
-                const gScore = currentNode.g + 1; // Assuming cost of 1 for all
-                let gScoreIsBest = false;
-
-                const existingNeighbor = openList.find(n => n.x === neighbor.x && n.y === neighbor.y);
+                const gScore = currentNode.g + neighbor.cost;
+                const neighborKey = `${neighbor.x},${neighbor.y}`;
+                const existingNeighbor = openSet.get(neighborKey);
 
                 if (!existingNeighbor) {
-                    gScoreIsBest = true;
-                    neighbor.h = Math.abs(neighbor.x - endNode.x) + Math.abs(neighbor.y - endNode.y);
+                    // Octile distance heuristic
+                    const dx = Math.abs(neighbor.x - endNode.x);
+                    const dy = Math.abs(neighbor.y - endNode.y);
+                    neighbor.h = Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+
                     neighbor.parent = currentNode;
                     neighbor.g = gScore;
                     neighbor.f = neighbor.g + neighbor.h;
+
                     openList.push(neighbor);
+                    openSet.set(neighborKey, neighbor);
                 } else if (gScore < existingNeighbor.g) {
-                    gScoreIsBest = true;
                     existingNeighbor.parent = currentNode;
                     existingNeighbor.g = gScore;
                     existingNeighbor.f = existingNeighbor.g + existingNeighbor.h;
+                    // Note: In a proper MinHeap implementation with decrease-key, we'd update position.
+                    // Here we rely on the fact that we might re-add it or just accept sub-optimality for simplicity
+                    // Or we can just push it again (lazy deletion)
+                    openList.push(existingNeighbor);
                 }
             }
         }
@@ -137,18 +205,93 @@ export default class Pathfinder {
         const x = node.x;
         const y = node.y;
 
-        if (x > 0) ret.push({ x: x - 1, y: y });
-        if (x < this.width - 1) ret.push({ x: x + 1, y: y });
-        if (y > 0) ret.push({ x: x, y: y - 1 });
-        if (y < this.height - 1) ret.push({ x: x, y: y + 1 });
+        // 8 directions: N, S, E, W, NE, NW, SE, SW
+        const directions = [
+            { x: -1, y: 0, cost: 1.0 },   // Left
+            { x: 1, y: 0, cost: 1.0 },    // Right
+            { x: 0, y: -1, cost: 1.0 },   // Up
+            { x: 0, y: 1, cost: 1.0 },    // Down
+            { x: -1, y: -1, cost: 1.414 }, // Up-Left
+            { x: 1, y: -1, cost: 1.414 },  // Up-Right
+            { x: -1, y: 1, cost: 1.414 },  // Down-Left
+            { x: 1, y: 1, cost: 1.414 }    // Down-Right
+        ];
+
+        for (let dir of directions) {
+            const nx = x + dir.x;
+            const ny = y + dir.y;
+
+            if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+                // Check for diagonal corner cutting
+                if (dir.cost > 1) {
+                    if (!this.isDiagonalPassable(x, y, dir.x, dir.y)) {
+                        continue;
+                    }
+                }
+                ret.push({ x: nx, y: ny, cost: dir.cost });
+            }
+        }
 
         return ret;
     }
 
     isPassable(x, y) {
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
-        // Access global map or passed map
-        // Assuming map[y][x] structure from index.html
         return this.map[y][x].passable;
+    }
+
+    isDiagonalPassable(x, y, dx, dy) {
+        // Check if the two adjacent cardinal tiles are passable
+        return this.isPassable(x + dx, y) && this.isPassable(x, y + dy);
+    }
+
+    smoothPath(path) {
+        if (path.length <= 2) return path;
+
+        const smoothed = [path[0]];
+        let current = 0;
+
+        while (current < path.length - 1) {
+            let farthest = current + 1;
+
+            // Look ahead as far as possible
+            for (let i = path.length - 1; i > current; i--) {
+                if (this.hasLineOfSight(path[current], path[i])) {
+                    farthest = i;
+                    break;
+                }
+            }
+
+            smoothed.push(path[farthest]);
+            current = farthest;
+        }
+
+        return smoothed;
+    }
+
+    hasLineOfSight(start, end) {
+        let x0 = Math.floor(start.x);
+        let y0 = Math.floor(start.y);
+        let x1 = Math.floor(end.x);
+        let y1 = Math.floor(end.y);
+
+        let dx = Math.abs(x1 - x0);
+        let dy = Math.abs(y1 - y0);
+        let sx = (x0 < x1) ? 1 : -1;
+        let sy = (y0 < y1) ? 1 : -1;
+        let err = dx - dy;
+
+        while (true) {
+            if (!this.isPassable(x0, y0)) return false;
+            if (x0 === x1 && y0 === y1) break;
+            let e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx) { err += dx; y0 += sy; }
+        }
+        return true;
+    }
+
+    clearCache() {
+        this.pathCache.clear();
     }
 }

@@ -49,6 +49,118 @@ let mouseY = 0;
 
 export const keys = {};
 
+const HOTKEYS = {
+    // Buildings
+    'KeyB': 'barracks',
+    'KeyF': 'farm',
+    'KeyL': 'lumbermill',
+    'KeyT': 'guardtower',
+    'KeyK': 'blacksmith',
+
+    // Unit production
+    'KeyS': 'soldier',
+    'KeyA': 'archer',
+    'KeyN': 'knight',
+    'KeyP': 'peasant',
+
+    // Commands
+    'KeyH': 'stop',      // Halt
+    'KeyG': 'patrol',
+    'KeyX': 'scatter',   // Spread formation
+
+    // Other
+    'Escape': 'cancel'
+};
+
+// Control Groups
+const controlGroups = {};
+
+function setControlGroup(num) {
+    controlGroups[num] = [...gameState.selectedEntities];
+    logGameMessage(`Control group ${num} set (${controlGroups[num].length} units)`);
+    soundManager.play('select_unit');
+}
+
+function selectControlGroup(num) {
+    if (!controlGroups[num] || controlGroups[num].length === 0) return;
+
+    // Clear current selection
+    gameState.selectedEntities.forEach(e => e.selected = false);
+    gameState.selectedEntities = [];
+
+    // Select group (filter dead units)
+    controlGroups[num] = controlGroups[num].filter(e => !e.isDead);
+    controlGroups[num].forEach(e => {
+        e.selected = true;
+        gameState.selectedEntities.push(e);
+    });
+
+    updateSelectionPanel();
+    soundManager.play('select_unit');
+}
+
+function handleHotkey(action) {
+    const selected = gameState.selectedEntities[0];
+    if (!selected) return;
+
+    // Building hotkeys
+    if (['barracks', 'farm', 'lumbermill', 'guardtower', 'blacksmith'].includes(action)) {
+        if (selected.type === 'peasant') {
+            enterBuildingMode(action);
+            logGameMessage(`Build mode: ${action}`);
+        }
+    }
+
+    // Unit production
+    if (['soldier', 'archer', 'knight', 'peasant'].includes(action)) {
+        if (selected instanceof Building && selected.stats.trains?.includes(action)) {
+            selected.trainUnit(action);
+        }
+    }
+
+    // Commands
+    if (action === 'stop') {
+        gameState.selectedEntities.forEach(e => {
+            if (e instanceof Unit) {
+                e.stop();
+            }
+        });
+    }
+
+    if (action === 'patrol') {
+        gameState.commandMode = 'patrol_start';
+        logGameMessage("Patrol mode: Click start point");
+    }
+
+    if (action === 'cancel') {
+        gameState.buildingMode = null;
+        gameState.commandMode = null;
+        logGameMessage("Cancelled.");
+    }
+}
+
+export function updateCameraFromKeys(canvas) {
+    const speed = 10; // pixels per frame
+
+    if (keys['KeyW'] || keys['ArrowUp']) camera.y -= speed;
+    if (keys['KeyS'] || keys['ArrowDown']) camera.y += speed;
+    if (keys['KeyA'] || keys['ArrowLeft']) camera.x -= speed;
+    if (keys['KeyD'] || keys['ArrowRight']) camera.x += speed;
+
+    // Edge scrolling (mouse near edge)
+    const { x: mouseX, y: mouseY } = getMousePosition();
+    const edgeThreshold = 50;
+
+    if (mouseX < edgeThreshold) camera.x -= speed;
+    if (mouseX > canvas.width - edgeThreshold) camera.x += speed;
+    if (mouseY < edgeThreshold) camera.y -= speed;
+    if (mouseY > canvas.height - edgeThreshold) camera.y += speed;
+
+    // Clamp camera
+    camera.x = Math.max(0, Math.min(camera.x, MAP_WIDTH * TILE_SIZE - canvas.width));
+    camera.y = Math.max(0, Math.min(camera.y, MAP_HEIGHT * TILE_SIZE - canvas.height));
+}
+
 export function getMousePosition() {
     return { x: mouseX, y: mouseY };
 }
@@ -58,6 +170,22 @@ export function initInput(canvas, minimapCanvas) {
     window.addEventListener('keydown', (e) => {
         keys[e.code] = true;
         soundManager.tryPlayMusic();
+
+        // Handle hotkeys
+        if (HOTKEYS[e.code]) {
+            handleHotkey(HOTKEYS[e.code]);
+        }
+
+        // Control groups (Ctrl + number)
+        if (e.ctrlKey && e.code >= 'Digit1' && e.code <= 'Digit9') {
+            const groupNum = parseInt(e.code.replace('Digit', ''));
+            setControlGroup(groupNum);
+        }
+        // Select control group (just number)
+        else if (!e.ctrlKey && e.code >= 'Digit1' && e.code <= 'Digit9') {
+            const groupNum = parseInt(e.code.replace('Digit', ''));
+            selectControlGroup(groupNum);
+        }
     });
     window.addEventListener('keyup', (e) => keys[e.code] = false);
 
@@ -92,6 +220,9 @@ export function initInput(canvas, minimapCanvas) {
         }
     });
 
+    let lastClickTime = 0;
+    let lastClickedUnit = null;
+
     canvas.addEventListener('mouseup', (event) => {
         if (event.button === 0 && isDragging) {
             isDragging = false;
@@ -101,26 +232,49 @@ export function initInput(canvas, minimapCanvas) {
             const releaseX = event.clientX - rect.left + camera.x;
             const releaseY = event.clientY - rect.top + camera.y;
 
-            // Determine selection rectangle
             const minX = Math.min(dragStartX, releaseX);
             const maxX = Math.max(dragStartX, releaseX);
             const minY = Math.min(dragStartY, releaseY);
             const maxY = Math.max(dragStartY, releaseY);
 
-            // Clear previous selection
-            gameState.selectedEntities.forEach(e => e.selected = false);
-            gameState.selectedEntities = [];
+            // SHIFT: Add to selection
+            if (!event.shiftKey) {
+                gameState.selectedEntities.forEach(e => e.selected = false);
+                gameState.selectedEntities = [];
+            }
 
             // Select Units in Rectangle
             if (maxX - minX > 5 && maxY - minY > 5) {
                 units.forEach(u => {
                     if (!u.isDead && u.faction === FACTIONS.PLAYER.id &&
-                        u.x * TILE_SIZE + TILE_SIZE / 2 >= minX && u.x * TILE_SIZE + TILE_SIZE / 2 <= maxX &&
-                        u.y * TILE_SIZE + TILE_SIZE / 2 >= minY && u.y * TILE_SIZE + TILE_SIZE / 2 <= maxY) {
-                        u.selected = true;
-                        gameState.selectedEntities.push(u);
+                        u.x * TILE_SIZE + TILE_SIZE / 2 >= minX &&
+                        u.x * TILE_SIZE + TILE_SIZE / 2 <= maxX &&
+                        u.y * TILE_SIZE + TILE_SIZE / 2 >= minY &&
+                        u.y * TILE_SIZE + TILE_SIZE / 2 <= maxY) {
+
+                        if (!gameState.selectedEntities.includes(u)) {
+                            u.selected = true;
+                            gameState.selectedEntities.push(u);
+                        }
                     }
                 });
+
+                // CTRL: Also select buildings in box
+                if (event.ctrlKey) {
+                    buildings.forEach(b => {
+                        if (!b.isDead && b.faction === FACTIONS.PLAYER.id &&
+                            b.x * TILE_SIZE >= minX &&
+                            (b.x + b.size) * TILE_SIZE <= maxX &&
+                            b.y * TILE_SIZE >= minY &&
+                            (b.y + b.size) * TILE_SIZE <= maxY) {
+
+                            if (!gameState.selectedEntities.includes(b)) {
+                                b.selected = true;
+                                gameState.selectedEntities.push(b);
+                            }
+                        }
+                    });
+                }
             } else {
                 // Single Click Selection
                 const clickX = releaseX;
@@ -133,10 +287,33 @@ export function initInput(canvas, minimapCanvas) {
 
                 const selectedEntity = clickedUnit || clickedBuilding;
 
-                if (selectedEntity && selectedEntity.faction === FACTIONS.PLAYER.id) {
-                    selectedEntity.selected = true;
-                    gameState.selectedEntities.push(selectedEntity);
+                // Double-click to Select All of Type
+                const now = Date.now();
+                const isDoubleClick = (now - lastClickTime) < 300;
+
+                if (isDoubleClick && lastClickedUnit && clickedUnit === lastClickedUnit) {
+                    // Select all units of same type on screen
+                    gameState.selectedEntities.forEach(e => e.selected = false);
+                    gameState.selectedEntities = [];
+
+                    units.forEach(u => {
+                        if (!u.isDead &&
+                            u.faction === FACTIONS.PLAYER.id &&
+                            u.type === clickedUnit.type &&
+                            isOnScreen(u, canvas)) {
+                            u.selected = true;
+                            gameState.selectedEntities.push(u);
+                        }
+                    });
+                } else if (selectedEntity && selectedEntity.faction === FACTIONS.PLAYER.id) {
+                    if (!gameState.selectedEntities.includes(selectedEntity)) {
+                        selectedEntity.selected = true;
+                        gameState.selectedEntities.push(selectedEntity);
+                    }
                 }
+
+                lastClickTime = now;
+                lastClickedUnit = clickedUnit;
             }
 
             if (gameState.selectedEntities.length > 0) {
@@ -146,6 +323,13 @@ export function initInput(canvas, minimapCanvas) {
             updateSelectionPanel();
         }
     });
+
+    function isOnScreen(unit, canvas) {
+        const x = unit.x * TILE_SIZE;
+        const y = unit.y * TILE_SIZE;
+        return x >= camera.x && x <= camera.x + canvas.width &&
+            y >= camera.y && y <= camera.y + canvas.height;
+    }
 
     canvas.addEventListener('contextmenu', (event) => {
         event.preventDefault(); // Prevent right-click menu
@@ -198,7 +382,16 @@ export function initInput(canvas, minimapCanvas) {
                 logGameMessage("Cannot build there! Obstacle, water, or existing structure.");
             }
 
-            // 2. Unit Command Mode (Move/Attack/Gather)
+            // 2. Patrol Mode
+        } else if (gameState.commandMode === 'patrol_start') {
+            const selectedUnits = gameState.selectedEntities.filter(e => e instanceof Unit && e.faction === FACTIONS.PLAYER.id);
+            selectedUnits.forEach(u => {
+                u.patrol(u.x, u.y, tileX, tileY);
+            });
+            gameState.commandMode = null;
+            logGameMessage("Patrol route set.");
+
+            // 3. Unit Command Mode (Move/Attack/Gather)
         } else if (selected instanceof Unit) {
             const targetUnit = units.find(u => !u.isDead && Math.abs(u.x - tileX) < 1 && Math.abs(u.y - tileY) < 1 && u.faction !== selected.faction);
             const targetBuilding = buildings.find(b => !b.isDead && tileX >= b.x && tileX < b.x + b.size && tileY >= b.y && tileY < b.y + b.size && b.faction !== selected.faction);
@@ -210,31 +403,17 @@ export function initInput(canvas, minimapCanvas) {
 
             if (selectedUnits.length > 1) {
                 // --- FORMATION MOVEMENT ---
-                // Simple Grid Formation
-                const count = selectedUnits.length;
-                const cols = Math.ceil(Math.sqrt(count));
-                const spacing = 1.5; // Distance between units
-
-                // Center of formation is the clicked tile
-                const startX = tileX - (cols * spacing) / 2;
-                const startY = tileY - (Math.ceil(count / cols) * spacing) / 2;
+                const formationType = keys['ShiftLeft'] ? 'line' : 'grid'; // Shift for Line formation
+                const positions = getFormationPositions(tileX, tileY, selectedUnits, formationType);
 
                 selectedUnits.forEach((unit, index) => {
-                    const col = index % cols;
-                    const row = Math.floor(index / cols);
-
-                    let tx = startX + col * spacing;
-                    let ty = startY + row * spacing;
-
-                    // Clamp to map
-                    tx = Math.max(1, Math.min(MAP_WIDTH - 2, tx));
-                    ty = Math.max(1, Math.min(MAP_HEIGHT - 2, ty));
+                    const pos = positions[index];
 
                     // If attacking, all attack the target
                     if (targetEntity && targetEntity.faction !== FACTIONS.NEUTRAL.id) {
                         unit.moveTo(targetEntity.x, targetEntity.y, targetEntity);
                     } else {
-                        unit.moveTo(Math.floor(tx), Math.floor(ty));
+                        unit.moveTo(pos.x, pos.y);
                     }
                 });
 
@@ -284,6 +463,80 @@ export function initInput(canvas, minimapCanvas) {
             }
         }
     });
+
+    function getFormationPositions(centerX, centerY, units, formationType = 'grid') {
+        const positions = [];
+        const count = units.length;
+
+        switch (formationType) {
+            case 'line':
+                // Horizontal line
+                const lineSpacing = 1.5;
+                const lineStart = centerX - (count * lineSpacing) / 2;
+                units.forEach((unit, i) => {
+                    positions.push({
+                        x: lineStart + i * lineSpacing,
+                        y: centerY
+                    });
+                });
+                break;
+
+            case 'grid':
+            default:
+                const cols = Math.ceil(Math.sqrt(count));
+                const spacing = 1.5;
+                const startX = centerX - (cols * spacing) / 2;
+                const startY = centerY - (Math.ceil(count / cols) * spacing) / 2;
+
+                units.forEach((unit, index) => {
+                    const col = index % cols;
+                    const row = Math.floor(index / cols);
+                    positions.push({
+                        x: startX + col * spacing,
+                        y: startY + row * spacing
+                    });
+                });
+        }
+
+        // Validate and adjust for obstacles
+        return positions.map(pos => {
+            let { x, y } = pos;
+
+            // If blocked, find nearest passable
+            if (!isPassable(Math.floor(x), Math.floor(y))) {
+                const nearest = findNearestPassable(x, y, 5);
+                if (nearest) {
+                    x = nearest.x;
+                    y = nearest.y;
+                }
+            }
+
+            return {
+                x: Math.max(1, Math.min(MAP_WIDTH - 2, x)),
+                y: Math.max(1, Math.min(MAP_HEIGHT - 2, y))
+            };
+        });
+    }
+
+    function isPassable(x, y) {
+        if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
+        return map[y][x].passable;
+    }
+
+    function findNearestPassable(x, y, maxRadius) {
+        for (let r = 1; r <= maxRadius; r++) {
+            for (let dx = -r; dx <= r; dx++) {
+                for (let dy = -r; dy <= r; dy++) {
+                    const nx = Math.floor(x + dx);
+                    const ny = Math.floor(y + dy);
+                    if (isPassable(nx, ny)) {
+                        return { x: nx, y: ny };
+                    }
+                }
+            }
+        }
+        return null;
+    }
 
     // Minimap Click to Move Camera
     minimapCanvas.addEventListener('mousedown', (e) => {
