@@ -5,15 +5,15 @@
 
 import { AI_TUNING } from '../config/aiTuning.js';
 import { UPGRADES } from '../config/entityStats.js';
-import { gameState } from '../core/GameState.js'; // Need access to upgrades
+import { gameState, buildings, map } from '../core/GameState.js';
 import { MAP_WIDTH, MAP_HEIGHT } from '../config/constants.js';
-import { map } from '../core/GameState.js'; // For placement check
 
 export default class AIBuildManager {
-    constructor(factionId, worldView, personality) {
+    constructor(factionId, worldView, personality, logger) {
         this.factionId = factionId;
         this.worldView = worldView;
         this.personality = personality;
+        this.logger = logger;
     }
 
     update(myUnits, myBuildings, resources) {
@@ -86,7 +86,10 @@ export default class AIBuildManager {
     tryBuild(peasants, resources, type, nearEntity) {
         // Find idle builder
         const builder = peasants.find(p => !p.isBuilding && !p.isGathering && !p.isMoving) || peasants[0];
-        if (!builder) return;
+        if (!builder) {
+            this.logger?.log('Build', `No Builder for ${type}`);
+            return;
+        }
 
         // Check cost (handled by Entity but good to check here)
         // We assume caller checked resources or Entity will fail.
@@ -95,6 +98,9 @@ export default class AIBuildManager {
         const pos = this.findBuildLocation(nearEntity.x, nearEntity.y, 3, 20);
         if (pos) {
             builder.startBuilding(type, pos.x, pos.y);
+            this.logger?.log('Build', `Started ${type}`, `at (${pos.x},${pos.y})`);
+        } else {
+            this.logger?.log('Build', `No Space for ${type}`);
         }
     }
 
@@ -116,11 +122,28 @@ export default class AIBuildManager {
     isValidLocation(x, y, size) {
         if (x < 2 || x >= MAP_WIDTH - 2 || y < 2 || y >= MAP_HEIGHT - 2) return false;
 
+        // Check if tiles are passable
         for (let dy = 0; dy < size; dy++) {
             for (let dx = 0; dx < size; dx++) {
                 if (!map[y + dy][x + dx].passable) return false;
             }
         }
+
+        // Check for existing buildings
+        for (const building of buildings) {
+            if (building.isDead) continue;
+
+            // Check if building overlaps with proposed location
+            const bx = Math.floor(building.x);
+            const by = Math.floor(building.y);
+            const bSize = building.size || 2;
+
+            // AABB collision check
+            if (!(x + size <= bx || x >= bx + bSize || y + size <= by || y >= by + bSize)) {
+                return false; // Overlap detected
+            }
+        }
+
         return true;
     }
 }

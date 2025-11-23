@@ -14,7 +14,7 @@ export const AI_TUNING = {
     // Economy
     ECONOMY: {
         MIN_PEASANTS: 5,
-        MAX_PEASANTS_PER_BASE: 20,
+        MAX_PEASANTS_PER_BASE: 12,
         GOLD_WOOD_RATIO: 0.6, // 60% gold, 40% wood
         EXPANSION_GOLD_THRESHOLD: 500,
         EXPANSION_ARMY_THRESHOLD: 15

@@ -7,9 +7,11 @@ import { units, buildings, gameState } from '../core/GameState.js';
 import { AI_TUNING } from '../config/aiTuning.js';
 import { Profiler } from '../utils/Profiler.js';
 
+import { AILogger } from '../ai/AILogger.js';
 import AIWorldView from '../ai/AIWorldView.js';
 import AIEconomyManager from '../ai/AIEconomyManager.js';
 import AIBuildManager from '../ai/AIBuildManager.js';
+import AIArmyManager from '../ai/AIArmyManager.js';
 import AIAttackManager from '../ai/AIAttackManager.js';
 import AIDefenseManager from '../ai/AIDefenseManager.js';
 import AIScoutManager from '../ai/AIScoutManager.js';
@@ -71,10 +73,14 @@ export default class AIController {
         this.state = 'GROWTH';
         this.timer = 0;
 
+        // Initialize logger
+        this.logger = new AILogger(factionId, true);
+
         // Initialize managers
         this.worldView = new AIWorldView(factionId);
         this.economyManager = new AIEconomyManager(factionId, this.worldView, this.personality);
-        this.buildManager = new AIBuildManager(factionId, this.worldView, this.personality);
+        this.buildManager = new AIBuildManager(factionId, this.worldView, this.personality, this.logger);
+        this.armyManager = new AIArmyManager(factionId, this.worldView, this.personality, this.logger);
         this.attackManager = new AIAttackManager(factionId, this.worldView, this.personality);
         this.defenseManager = new AIDefenseManager(factionId, this.worldView, this.personality);
         this.scoutManager = new AIScoutManager(factionId, this.worldView, this.personality);
@@ -115,16 +121,20 @@ export default class AIController {
             if (newState) this.state = newState;
         }
 
-        // 3. Economy & Buildings (Medium: ~1s)
+        // 3. Economy, Buildings, & Army Training (Medium: ~1s)
         if (this.timer % 30 === 0) {
             this.economyManager.update(myUnits, myBuildings, resources);
             this.buildManager.update(myUnits, myBuildings, resources);
+            this.armyManager.update(myUnits, myBuildings, resources);
         }
 
         // 4. Attack (Slow: ~3s)
         if (this.timer % 90 === 0) {
             const newState = this.attackManager.update(myUnits, myBuildings, this.state);
-            if (newState) this.state = newState;
+            if (newState) {
+                this.logger.log('Strategy', `State: ${this.state} -> ${newState}`);
+                this.state = newState;
+            }
         }
 
         // 5. Scouting (Very Slow: ~5s)
@@ -138,9 +148,11 @@ export default class AIController {
             if (newState) this.state = newState;
 
             // Debug Log
-            console.log(`🤖 AI ${this.factionId} [${this.personality.name}] Res: G${resources.gold} W${resources.wood} F${resources.foodUsed}/${resources.foodMax} State: ${this.state}`);
+            const army = myUnits.filter(u => u.type !== 'peasant');
+            console.log(`🤖 AI ${this.factionId} [${this.personality.name}] State:${this.state} | Army:${army.length} | G:${resources.gold} W:${resources.wood} F:${resources.foodUsed}/${resources.foodMax}`);
         }
 
         Profiler.end('AI_Update');
     }
 }
+

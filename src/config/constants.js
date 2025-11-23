@@ -14,8 +14,8 @@
  */
 
 export const TILE_SIZE = 32;
-export const MAP_WIDTH = 200;
-export const MAP_HEIGHT = 200;
+export const MAP_WIDTH = 50;
+export const MAP_HEIGHT = 50;
 export const UI_PANEL_HEIGHT = 150;
 export const MINIMAP_SIZE = 150;
 export const MS_PER_UPDATE = 1000 / 30;
