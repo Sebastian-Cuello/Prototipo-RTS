@@ -69,6 +69,12 @@ class MinHeap {
  * @class Pathfinder
  * @description Implements A* pathfinding for unit navigation
  */
+import { Profiler } from '../utils/Profiler.js';
+
+/**
+ * @class Pathfinder
+ * @description Implements A* pathfinding for unit navigation
+ */
 export default class Pathfinder {
     constructor(mapWidth, mapHeight, tiles, map) {
         this.width = mapWidth;
@@ -80,16 +86,21 @@ export default class Pathfinder {
     }
 
     findPath(startX, startY, endX, endY, useCache = true) {
+        Profiler.start('Pathfinding');
         const sX = Math.floor(startX);
         const sY = Math.floor(startY);
         const eX = Math.floor(endX);
         const eY = Math.floor(endY);
 
-        if (sX === eX && sY === eY) return [];
+        if (sX === eX && sY === eY) {
+            Profiler.end('Pathfinding');
+            return [];
+        }
 
         const key = `${sX},${sY}-${eX},${eY}`;
 
         if (useCache && this.pathCache.has(key)) {
+            Profiler.end('Pathfinding');
             return [...this.pathCache.get(key)]; // Return clone
         }
 
@@ -103,6 +114,7 @@ export default class Pathfinder {
             this.pathCache.set(key, path);
         }
 
+        Profiler.end('Pathfinding');
         return path;
     }
 

@@ -1,45 +1,53 @@
 import { map, units, buildings } from '../core/GameState.js';
 import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT } from '../config/constants.js';
 import { camera } from './Camera.js';
-import { FACTIONS } from '../config/entityStats.js';
-import Unit from '../entities/Unit.js';
+import { FACTIONS, TILES } from '../config/entityStats.js';
+import { Profiler } from '../utils/Profiler.js';
 
 let minimapCanvas, minimapCtx;
+let terrainCache = null;
+let terrainCtx = null;
 
 export function initMinimapRenderer(canvas, ctx) {
     minimapCanvas = canvas;
     minimapCtx = ctx;
+
+    // Initialize cache
+    terrainCache = document.createElement('canvas');
+    terrainCache.width = canvas.width;
+    terrainCache.height = canvas.height;
+    terrainCtx = terrainCache.getContext('2d');
+
+    // Initial draw of static terrain
+    cacheTerrain();
 }
 
-import { TILES } from '../config/entityStats.js';
-
-export function drawMinimap() {
-    if (!minimapCtx) return;
-
-    // Clear
-    minimapCtx.fillStyle = '#000';
-    minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+function cacheTerrain() {
+    if (!terrainCtx) return;
 
     const scaleX = minimapCanvas.width / (MAP_WIDTH * TILE_SIZE);
     const scaleY = minimapCanvas.height / (MAP_HEIGHT * TILE_SIZE);
 
-    // Draw terrain
+    terrainCtx.fillStyle = '#000';
+    terrainCtx.fillRect(0, 0, terrainCache.width, terrainCache.height);
+
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tile = map[y][x];
 
             if (tile.id === TILES.WATER.id) {
-                minimapCtx.fillStyle = '#1e90ff';
+                terrainCtx.fillStyle = '#1e90ff';
             } else if (tile.id === TILES.TREE.id) {
-                minimapCtx.fillStyle = '#228b22';
+                terrainCtx.fillStyle = '#228b22';
             } else if (tile.id === TILES.MOUNTAIN.id) {
-                minimapCtx.fillStyle = '#696969';
+                terrainCtx.fillStyle = '#696969';
+            } else if (tile.id === TILES.STONE.id) {
+                terrainCtx.fillStyle = '#7f8c8d';
             } else {
-                minimapCtx.fillStyle = '#2d5016';
+                terrainCtx.fillStyle = '#2d5016';
             }
 
-            // Draw slightly larger to avoid gaps
-            minimapCtx.fillRect(
+            terrainCtx.fillRect(
                 Math.floor(x * TILE_SIZE * scaleX),
                 Math.floor(y * TILE_SIZE * scaleY),
                 Math.ceil(TILE_SIZE * scaleX),
@@ -47,8 +55,27 @@ export function drawMinimap() {
             );
         }
     }
+    console.log('🗺️ Minimap terrain cached');
+}
 
-    // Draw buildings
+export function drawMinimap() {
+    if (!minimapCtx) return;
+
+    Profiler.start('Minimap_Draw');
+
+    // 1. Draw cached terrain
+    if (terrainCache) {
+        minimapCtx.drawImage(terrainCache, 0, 0);
+    } else {
+        // Fallback if cache missing (shouldn't happen)
+        minimapCtx.fillStyle = '#000';
+        minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+    }
+
+    const scaleX = minimapCanvas.width / (MAP_WIDTH * TILE_SIZE);
+    const scaleY = minimapCanvas.height / (MAP_HEIGHT * TILE_SIZE);
+
+    // 2. Draw buildings
     buildings.forEach(b => {
         if (b.isDead) return;
 
@@ -62,7 +89,7 @@ export function drawMinimap() {
         );
     });
 
-    // Draw units (dots)
+    // 3. Draw units (dots)
     units.forEach(u => {
         if (u.isDead) return;
 
@@ -76,9 +103,7 @@ export function drawMinimap() {
         );
     });
 
-    // Draw camera viewport
-    // We need the main canvas dimensions to draw the viewport correctly
-    // Assuming a global canvas or passing it in would be better, but for now:
+    // 4. Draw camera viewport
     const viewportWidth = window.innerWidth - 400; // Approximate based on layout
     const viewportHeight = window.innerHeight;
 
@@ -90,4 +115,6 @@ export function drawMinimap() {
         Math.floor(viewportWidth * scaleX),
         Math.floor(viewportHeight * scaleY)
     );
+
+    Profiler.end('Minimap_Draw');
 }
