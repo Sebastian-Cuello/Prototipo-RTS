@@ -108,8 +108,9 @@ export default class AIController {
 
         // Staggered Updates (optimize by running at different intervals)
 
-        // 1. Combat Micro (Every frame if enabled)
-        if (this.microManagement) {
+        // 1. Combat Micro (Every 10 frames for all AI, not just HARD difficulty)
+        // This ensures AI units respond to threats and attack when discovered
+        if (this.timer % 10 === 0) {
             Profiler.start('AI_Micro');
             this.microManager.update(myUnits);
             Profiler.end('AI_Micro');

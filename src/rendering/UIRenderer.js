@@ -68,8 +68,12 @@ export default class UIRenderer {
         this.healthBarQueue = [];
     }
 
-    draw(ctx) {
-        // Range Indicators
+    /**
+     * Draw UI elements in world-space (affected by camera translation)
+     * These elements should move with the camera
+     */
+    drawWorldUI(ctx) {
+        // Range Indicators (world-space)
         gameState.selectedEntities.forEach(entity => {
             if (entity.stats.range) {
                 ctx.strokeStyle = '#ffffff44';
@@ -86,13 +90,22 @@ export default class UIRenderer {
             }
         });
 
-        // Building Ghost
+        // Building Ghost (world-space but uses screen mouse coords)
         if (gameState.buildingMode) {
             const { x, y } = getMousePosition();
             this.drawBuildingGhost(ctx, x, y, gameState.buildingMode);
         }
 
-        // Selection Box
+        // Flush health bars (must be in world-space)
+        this.flushHealthBars(ctx);
+    }
+
+    /**
+     * Draw UI elements in screen-space (NOT affected by camera translation)
+     * These elements stay fixed on screen
+     */
+    drawScreenUI(ctx) {
+        // Selection Box (screen-space - already in screen coordinates)
         if (this.isDragging) {
             ctx.strokeStyle = '#00FF00';
             ctx.lineWidth = 2;
@@ -100,9 +113,6 @@ export default class UIRenderer {
             const height = this.dragCurrentY - this.dragStartY;
             ctx.strokeRect(this.dragStartX, this.dragStartY, width, height);
         }
-
-        // Flush health bars (they are queued during entity rendering)
-        this.flushHealthBars(ctx);
     }
 
     drawBuildingGhost(ctx, mouseX, mouseY, buildingType) {
