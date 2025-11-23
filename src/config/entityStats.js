@@ -21,6 +21,7 @@ export const TILES = {
     GRASS: { id: 0, color: '#38761d', passable: true, name: 'Grass' },
     WATER: { id: 1, color: '#4a86e8', passable: false, name: 'Water' },
     TREE: { id: 2, color: '#6aa84f', passable: false, name: 'Forest' },
+    STONE: { id: 3, color: '#7f8c8d', passable: false, name: 'Stone' },
     MOUNTAIN: { id: 4, color: '#676767', passable: false, name: 'Mountain' },
 };
 
@@ -33,10 +34,10 @@ export const FACTIONS = {
 };
 
 export const UNIT_STATS = {
-    peasant: { name: 'Peasant', symbol: 'P', health: 40, attack: 5, range: 1, speed: 2, cost: { gold: 50, food: 1 }, maxHealth: 40, buildTime: 5, image: 'assets/units/peasant.png' },
-    soldier: { name: 'Soldier', symbol: 'S', health: 70, attack: 10, range: 1, speed: 1.5, cost: { gold: 100, food: 2 }, maxHealth: 70, buildTime: 10 },
-    archer: { name: 'Archer', symbol: 'A', health: 50, attack: 8, range: 5, speed: 1.8, cost: { gold: 120, food: 2 }, maxHealth: 50, buildTime: 12 },
-    knight: { name: 'Knight', symbol: 'K', health: 120, attack: 15, range: 1, speed: 2.5, cost: { gold: 200, food: 3 }, maxHealth: 120, buildTime: 15 },
+    peasant: { name: 'Peasant', symbol: 'P', health: 40, attack: 5, range: 1, speed: 2.6, cost: { gold: 50, food: 1 }, maxHealth: 40, buildTime: 5, image: 'assets/units/peasant.png' },
+    soldier: { name: 'Soldier', symbol: 'S', health: 70, attack: 10, range: 1, speed: 1.95, cost: { gold: 100, food: 2 }, maxHealth: 70, buildTime: 10 },
+    archer: { name: 'Archer', symbol: 'A', health: 50, attack: 8, range: 5, speed: 2.34, cost: { gold: 120, food: 2 }, maxHealth: 50, buildTime: 12 },
+    knight: { name: 'Knight', symbol: 'K', health: 120, attack: 15, range: 1, speed: 3.25, cost: { gold: 200, food: 3 }, maxHealth: 120, buildTime: 15 },
 };
 
 export const BUILDING_STATS = {

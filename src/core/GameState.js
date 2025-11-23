@@ -25,12 +25,12 @@
  */
 
 export const gameState = {
-    resources: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 10 },
+    resources: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 5 },
     factionResources: {
-        0: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 10 },
-        1: { gold: 0, wood: 0, stone: 0, foodUsed: 0, foodMax: 5 },
-        2: { gold: 0, wood: 0, stone: 0, foodUsed: 0, foodMax: 5 },
-        3: { gold: 0, wood: 0, stone: 0, foodUsed: 0, foodMax: 5 }
+        0: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 5 },
+        1: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 5 },
+        2: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 5 },
+        3: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 5 }
     },
     factionUpgrades: {
         0: [], 1: [], 2: [], 3: []
