@@ -157,20 +157,27 @@ export default class Renderer {
             this.uiRenderer,
             deltaTime
         );
+
+        // 5. World-Space UI (BEFORE restoring transform)
+        // These elements need to move with the camera
+        Profiler.start('Draw_WorldUI');
+        this.uiRenderer.drawWorldUI(this.ctx);
+        Profiler.end('Draw_WorldUI');
+
         this.ctx.restore();
         Profiler.end('Draw_Entities');
 
-        // 4. Particles
+        // 6. Particles
         Profiler.start('Draw_Particles');
         this.particleRenderer.update();
         this.particleRenderer.draw(this.ctx);
         Profiler.end('Draw_Particles');
 
-        // 5. UI (World Space - Selection Box, Range, etc)
-        // Note: Healthbars are also drawn here (flushed)
-        Profiler.start('Draw_UI');
-        this.uiRenderer.draw(this.ctx);
-        Profiler.end('Draw_UI');
+        // 7. Screen-Space UI (AFTER restoring transform)
+        // These elements stay fixed on screen
+        Profiler.start('Draw_ScreenUI');
+        this.uiRenderer.drawScreenUI(this.ctx);
+        Profiler.end('Draw_ScreenUI');
     }
 }
 

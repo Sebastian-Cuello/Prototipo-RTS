@@ -194,14 +194,15 @@ export function initInput(canvas, minimapCanvas) {
         soundManager.tryPlayMusic();
         if (event.button === 0) { // Left Click
             const rect = canvas.getBoundingClientRect();
-            const clickX = event.clientX - rect.left + camera.x;
-            const clickY = event.clientY - rect.top + camera.y;
+            // Screen coordinates for drag box
+            const screenX = event.clientX - rect.left;
+            const screenY = event.clientY - rect.top;
 
             isDragging = true;
-            dragStartX = clickX;
-            dragStartY = clickY;
-            dragCurrentX = clickX;
-            dragCurrentY = clickY;
+            dragStartX = screenX;
+            dragStartY = screenY;
+            dragCurrentX = screenX;
+            dragCurrentY = screenY;
             setDragState(true, dragStartX, dragStartY, dragCurrentX, dragCurrentY);
         }
     });
@@ -210,12 +211,10 @@ export function initInput(canvas, minimapCanvas) {
         const rect = canvas.getBoundingClientRect();
         mouseX = event.clientX - rect.left;
         mouseY = event.clientY - rect.top;
-        const worldMouseX = mouseX + camera.x;
-        const worldMouseY = mouseY + camera.y;
 
         if (isDragging) {
-            dragCurrentX = worldMouseX;
-            dragCurrentY = worldMouseY;
+            dragCurrentX = mouseX;
+            dragCurrentY = mouseY;
             setDragState(true, dragStartX, dragStartY, dragCurrentX, dragCurrentY);
         }
     });
@@ -229,13 +228,18 @@ export function initInput(canvas, minimapCanvas) {
             setDragState(false, 0, 0, 0, 0);
 
             const rect = canvas.getBoundingClientRect();
-            const releaseX = event.clientX - rect.left + camera.x;
-            const releaseY = event.clientY - rect.top + camera.y;
+            // Convert screen coordinates to world coordinates for selection
+            const releaseScreenX = event.clientX - rect.left;
+            const releaseScreenY = event.clientY - rect.top;
+            const releaseX = releaseScreenX + camera.x;
+            const releaseY = releaseScreenY + camera.y;
+            const startX = dragStartX + camera.x;
+            const startY = dragStartY + camera.y;
 
-            const minX = Math.min(dragStartX, releaseX);
-            const maxX = Math.max(dragStartX, releaseX);
-            const minY = Math.min(dragStartY, releaseY);
-            const maxY = Math.max(dragStartY, releaseY);
+            const minX = Math.min(startX, releaseX);
+            const maxX = Math.max(startX, releaseX);
+            const minY = Math.min(startY, releaseY);
+            const maxY = Math.max(startY, releaseY);
 
             // SHIFT: Add to selection
             if (!event.shiftKey) {

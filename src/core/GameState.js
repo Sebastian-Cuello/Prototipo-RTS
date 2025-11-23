@@ -8,14 +8,14 @@
  * - Selected entities and current build mode
  * - Game time and pause state
  * - All game entities (units, buildings, map)
- * - Game systems (AI controllers, spatial hash, pathfinder, fog of war)
+ * - Game systems (AI controllers, spatial hash, pathfinder, fog of war, alliances)
  * 
  * Key Features:
  * - Immutable exports with setter functions for controlled modifications
  * - Per-faction resource tracking
  * - Upgrade tracking system
  * - Entity array management (units, buildings)
- * - System instance management (pathfinder, spatial hash, AI)
+ * - System instance management (pathfinder, spatial hash, AI, alliances)
  * 
  * @property {Object} gameState - Main game state object
  * @property {Object} gameState.resources - Player resources
@@ -23,6 +23,9 @@
  * @property {Object} gameState.factionUpgrades - Researched upgrades per faction
  * @property {Array} gameState.selectedEntities - Currently selected units/buildings
  */
+
+import AllianceSystem from '../systems/AllianceSystem.js';
+import { ALLIANCE_CONFIG } from '../config/alliances.js';
 
 export const gameState = {
     resources: { gold: 500, wood: 500, stone: 150, foodUsed: 0, foodMax: 5 },
@@ -49,6 +52,7 @@ export let fogMap = [];
 export let aiControllers = [];
 export let spatialHash = null;
 export let pathfinder = null;
+export let allianceSystem = new AllianceSystem(ALLIANCE_CONFIG);
 
 export function setMap(newMap) { map = newMap; }
 export function setUnits(newUnits) { units = newUnits; }
@@ -57,3 +61,4 @@ export function setFogMap(newFogMap) { fogMap = newFogMap; }
 export function setAIControllers(newAIControllers) { aiControllers = newAIControllers; }
 export function setSpatialHash(newSpatialHash) { spatialHash = newSpatialHash; }
 export function setPathfinder(newPathfinder) { pathfinder = newPathfinder; }
+export function setAllianceSystem(newAllianceSystem) { allianceSystem = newAllianceSystem; }

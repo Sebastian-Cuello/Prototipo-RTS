@@ -5,7 +5,7 @@
 
 import { AI_TUNING } from '../config/aiTuning.js';
 import { FACTIONS } from '../config/entityStats.js';
-import { buildings, units } from '../core/GameState.js';
+import { buildings, units, allianceSystem } from '../core/GameState.js';
 
 export default class AIAttackManager {
     constructor(factionId, worldView, personality) {
@@ -79,11 +79,11 @@ export default class AIAttackManager {
     }
 
     findTargets() {
-        // Filter by faction
+        // Filter enemy buildings using alliance system
         const enemyBuildings = buildings.filter(b =>
             !b.isDead &&
-            b.faction !== this.factionId &&
-            b.faction !== FACTIONS.NEUTRAL.id
+            b.faction !== FACTIONS.NEUTRAL.id &&
+            allianceSystem.areEnemies(this.factionId, b.faction)
         );
 
         // Filter by exploration (Fog of War)
@@ -98,11 +98,10 @@ export default class AIAttackManager {
             return knownBuildings;
         }
 
-        // If no buildings known, check for known units
+        // If no buildings known, check for known units using alliance system
         const enemyUnits = units.filter(u =>
             !u.isDead &&
-            u.faction !== this.factionId &&
-            u.faction !== FACTIONS.NEUTRAL.id &&
+            allianceSystem.areEnemies(this.factionId, u.faction) &&
             this.worldView.isExplored(u.x, u.y)
         );
 

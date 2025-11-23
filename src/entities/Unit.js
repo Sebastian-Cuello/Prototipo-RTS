@@ -27,7 +27,7 @@
 
 import Entity from './Entity.js';
 import { UNIT_STATS, BUILDING_STATS, UPGRADES, FACTIONS } from '../config/entityStats.js';
-import { gameState, spatialHash, pathfinder, buildings, units, map } from '../core/GameState.js';
+import { gameState, spatialHash, pathfinder, buildings, units, map, allianceSystem } from '../core/GameState.js';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from '../config/constants.js';
 import { logGameMessage } from '../utils/Logger.js';
 import { updateResourcesUI, updateSelectionPanel } from '../ui/UIManager.js';
@@ -130,7 +130,8 @@ export default class Unit extends Entity {
         }
 
         // 4. Auto-Acquire Targets
-        if (!this.targetEntity && !this.isMoving && !this.isGathering && !this.isBuilding) {
+        // Improved: AI units can auto-acquire even while moving
+        if (!this.targetEntity && this.shouldAutoAcquire()) {
             if (this.stance === 'aggressive' || this.stance === 'defensive') {
                 const enemy = this.findNearestEnemy();
                 if (enemy) {
@@ -153,7 +154,13 @@ export default class Unit extends Entity {
         }
 
         // 5. Attack Logic
-        if (this.targetEntity && !this.isMoving && !this.isGathering && !this.isBuilding) {
+        // AI units should attack even while moving (for responsiveness)
+        // Player units only attack when idle
+        const canAttack = this.faction !== FACTIONS.PLAYER.id ?
+            (!this.isGathering && !this.isBuilding) :
+            (!this.isMoving && !this.isGathering && !this.isBuilding);
+
+        if (this.targetEntity && canAttack) {
             this.engageTarget();
         }
 
@@ -410,6 +417,20 @@ export default class Unit extends Entity {
         return this.faction === FACTIONS.PLAYER.id && this.hasPlayerCommand;
     }
 
+    /**
+     * Determine if unit should automatically search for enemies
+     * AI units always auto-acquire, player units only when not busy
+     */
+    shouldAutoAcquire() {
+        // AI units: always search for enemies (unless gathering or building)
+        if (this.faction !== FACTIONS.PLAYER.id) {
+            return !this.isGathering && !this.isBuilding;
+        }
+
+        // Player units: only when idle (not moving, gathering, or building)
+        return !this.isMoving && !this.isGathering && !this.isBuilding;
+    }
+
     performAttack() {
         this.attackCooldown = 30;
         const damage = this.stats.attack;
@@ -491,8 +512,17 @@ export default class Unit extends Entity {
 
         nearbyEntities.forEach(entity => {
             if (entity === this || entity.isDead) return;
-            if (entity.faction === this.faction) return;
             if (entity.faction === FACTIONS.NEUTRAL.id) return;
+
+            // Use alliance system to determine if enemy
+            const isEnemy = allianceSystem.areEnemies(this.faction, entity.faction);
+
+            // DEBUG: Log alliance check for AI units
+            if (this.faction !== FACTIONS.PLAYER.id && nearbyEntities.length > 0 && Math.random() < 0.01) {
+                console.log(`[${this.faction}] Checking entity [${entity.faction}]: isEnemy=${isEnemy}`);
+            }
+
+            if (!isEnemy) return;
 
             const dist = Math.sqrt(
                 Math.pow(entity.x - this.x, 2) +

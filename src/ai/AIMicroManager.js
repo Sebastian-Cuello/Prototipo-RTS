@@ -51,9 +51,9 @@ export default class AIMicroManager {
             if (this.isValidMove(rx, ry)) {
                 unit.moveTo(rx, ry);
 
-                // Stutter step attack
+                // Stutter step attack - set target and let unit handle attack
                 if (this.dist(unit, meleeThreat) <= unit.stats.range) {
-                    unit.attackTarget(meleeThreat);
+                    unit.targetEntity = meleeThreat;
                 }
             }
         }
@@ -67,7 +67,9 @@ export default class AIMicroManager {
 
         if (bestTarget) {
             if (!unit.targetEntity || unit.targetEntity.isDead || this.shouldSwitchTarget(unit, bestTarget)) {
-                unit.attackTarget(bestTarget);
+                // Set target and move to engage
+                unit.targetEntity = bestTarget;
+                unit.moveTo(bestTarget.getTileX(), bestTarget.getTileY(), bestTarget);
             }
         }
     }

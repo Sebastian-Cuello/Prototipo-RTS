@@ -3,9 +3,10 @@
  * @description Interface for AI to access game state with "Fog of War" filtering
  */
 
-import { spatialHash, map, units, buildings } from '../core/GameState.js';
+import { spatialHash, map, units, buildings, allianceSystem } from '../core/GameState.js';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from '../config/constants.js';
 import { AI_TUNING } from '../config/aiTuning.js';
+import { FACTIONS } from '../config/entityStats.js';
 
 export default class AIWorldView {
     constructor(factionId) {
@@ -55,17 +56,12 @@ export default class AIWorldView {
 
     getEnemiesNear(x, y, radius) {
         if (!spatialHash) return [];
-        // Filter by faction AND visibility (simplified: if in explored area or close to my units)
-        // For now, let's assume if it's in the spatial hash, we check if we "see" it.
-        // But spatial hash has everything.
 
         const entities = spatialHash.query(x, y, radius);
         return entities.filter(e =>
-            e.faction !== this.factionId &&
-            e.faction !== 0 && // Assuming 0 is Player, wait. Faction IDs are generic.
-            // We need to check if it's an enemy.
-            // Let's pass "myFaction" to the filter if needed, but we have this.factionId
-            !e.isDead
+            !e.isDead &&
+            e.faction !== FACTIONS.NEUTRAL.id &&
+            allianceSystem.areEnemies(this.factionId, e.faction)
         );
     }
 
