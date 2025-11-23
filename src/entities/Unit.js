@@ -154,7 +154,13 @@ export default class Unit extends Entity {
         }
 
         // 5. Attack Logic
-        if (this.targetEntity && !this.isMoving && !this.isGathering && !this.isBuilding) {
+        // AI units should attack even while moving (for responsiveness)
+        // Player units only attack when idle
+        const canAttack = this.faction !== FACTIONS.PLAYER.id ?
+            (!this.isGathering && !this.isBuilding) :
+            (!this.isMoving && !this.isGathering && !this.isBuilding);
+
+        if (this.targetEntity && canAttack) {
             this.engageTarget();
         }
 
@@ -509,7 +515,14 @@ export default class Unit extends Entity {
             if (entity.faction === FACTIONS.NEUTRAL.id) return;
 
             // Use alliance system to determine if enemy
-            if (!allianceSystem.areEnemies(this.faction, entity.faction)) return;
+            const isEnemy = allianceSystem.areEnemies(this.faction, entity.faction);
+
+            // DEBUG: Log alliance check for AI units
+            if (this.faction !== FACTIONS.PLAYER.id && nearbyEntities.length > 0 && Math.random() < 0.01) {
+                console.log(`[${this.faction}] Checking entity [${entity.faction}]: isEnemy=${isEnemy}`);
+            }
+
+            if (!isEnemy) return;
 
             const dist = Math.sqrt(
                 Math.pow(entity.x - this.x, 2) +

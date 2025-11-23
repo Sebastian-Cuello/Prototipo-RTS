@@ -43,6 +43,7 @@ export default class AllianceSystem {
         // In free-for-all, we don't need to set anything
         // areEnemies will return true for all different factions
         console.log('🤝 Alliance System: FREE_FOR_ALL mode initialized');
+        console.log('   All factions are enemies with each other');
     }
 
     /**
@@ -131,7 +132,14 @@ export default class AllianceSystem {
         if (faction1 === faction2) return false;
 
         // Factions are enemies if they are not allies
-        return !this.areAllies(faction1, faction2);
+        const result = !this.areAllies(faction1, faction2);
+
+        // DEBUG: Log some checks
+        if (Math.random() < 0.001) {
+            console.log(`Alliance Check: ${faction1} vs ${faction2} = ${result ? 'ENEMIES' : 'ALLIES'}`);
+        }
+
+        return result;
     }
 
     /**
