@@ -65,7 +65,7 @@ To add a custom Town Hall image:
 1. Create a PNG file named `townhall.png`
 2. Make it at least 96x96 pixels (for size 3 building)
 3. Save it with transparent background
-4. Place it in `/Users/axelcuello/Desktop/RTS/assets/buildings/townhall.png`
+4. Place it in `../assets/buildings/townhall.png`
 5. Refresh the game to see your art!
 
 ## 🎨 Current Status
