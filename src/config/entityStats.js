@@ -34,21 +34,21 @@ export const FACTIONS = {
 };
 
 export const UNIT_STATS = {
-    peasant: { name: 'Peasant', symbol: 'P', health: 40, attack: 5, range: 1, speed: 2.6, cost: { gold: 50, food: 1 }, maxHealth: 40, buildTime: 5, image: 'assets/units/peasant.png' },
-    soldier: { name: 'Soldier', symbol: 'S', health: 70, attack: 10, range: 1, speed: 1.95, cost: { gold: 100, food: 2 }, maxHealth: 70, buildTime: 10 },
-    archer: { name: 'Archer', symbol: 'A', health: 50, attack: 8, range: 5, speed: 2.34, cost: { gold: 120, food: 2 }, maxHealth: 50, buildTime: 12 },
-    knight: { name: 'Knight', symbol: 'K', health: 120, attack: 15, range: 1, speed: 3.25, cost: { gold: 200, food: 3 }, maxHealth: 120, buildTime: 15 },
+    peasant: { name: 'Peasant', symbol: 'P', health: 40, attack: 5, range: 1, speed: 2.6, cost: { gold: 400, wood: 0, food: 1 }, maxHealth: 40, buildTime: 5, image: 'assets/units/peasant.png' },
+    soldier: { name: 'Soldier', symbol: 'S', health: 70, attack: 10, range: 1, speed: 1.95, cost: { gold: 600, wood: 0, food: 2 }, maxHealth: 70, buildTime: 10 },
+    archer: { name: 'Archer', symbol: 'A', health: 50, attack: 8, range: 5, speed: 2.34, cost: { gold: 500, wood: 50, food: 2 }, maxHealth: 50, buildTime: 12 },
+    knight: { name: 'Knight', symbol: 'K', health: 120, attack: 15, range: 1, speed: 3.25, cost: { gold: 800, wood: 100, food: 3 }, maxHealth: 120, buildTime: 15 },
 };
 
 export const BUILDING_STATS = {
-    townhall: { name: 'Town Hall', symbol: 'H', health: 1500, size: 3, cost: { gold: 300, wood: 200 }, maxHealth: 1500, trainUnits: ['peasant'], upgradeTo: 'keep', buildable: true, image: 'assets/buildings/townhall.png', foodCapacity: 5 },
-    keep: { name: 'Keep', symbol: 'K', health: 2000, size: 3, cost: { gold: 500, wood: 200 }, maxHealth: 2000, trainUnits: ['peasant'], image: 'assets/buildings/keep.png' },
-    barracks: { name: 'Barracks', symbol: 'B', health: 800, size: 3, cost: { gold: 150, wood: 100 }, maxHealth: 800, trainUnits: ['soldier', 'archer', 'knight'], buildable: true, image: 'assets/buildings/barracks.png' },
-    farm: { name: 'Farm', symbol: 'F', health: 400, size: 2, cost: { gold: 80, wood: 50 }, maxHealth: 400, foodCapacity: 5, buildable: true, image: 'assets/buildings/farm.png' },
-    guardtower: { name: 'Guard Tower', symbol: 'T', health: 500, size: 2, cost: { gold: 150, wood: 50 }, maxHealth: 500, attack: 10, range: 6, attackCooldown: 30, buildable: true, image: 'assets/buildings/guardtower.png' },
-    lumbermill: { name: 'Lumber Mill', symbol: 'L', health: 600, size: 3, cost: { gold: 150, wood: 50 }, maxHealth: 600, buildable: true, image: 'assets/buildings/lumbermill.png' },
-    blacksmith: { name: 'Blacksmith', symbol: 'S', health: 700, size: 3, cost: { gold: 150, wood: 100 }, maxHealth: 700, buildable: true, image: 'assets/buildings/blacksmith.png' },
-    goldmine: { name: 'Gold Mine', symbol: 'G', health: 10000, size: 2, cost: { gold: 0, wood: 0 }, maxHealth: 10000, neutral: true, image: 'assets/buildings/goldmine.png' }
+    townhall: { name: 'Town Hall', symbol: 'H', health: 1500, size: 3, cost: { gold: 1200, wood: 800 }, maxHealth: 1500, trainUnits: ['peasant'], upgradeTo: 'keep', buildable: true, image: 'assets/buildings/townhall.png', foodCapacity: 5, buildTime: 60 },
+    keep: { name: 'Keep', symbol: 'K', health: 2000, size: 3, cost: { gold: 500, wood: 200 }, maxHealth: 2000, trainUnits: ['peasant'], image: 'assets/buildings/keep.png', buildTime: 40 },
+    barracks: { name: 'Barracks', symbol: 'B', health: 800, size: 3, cost: { gold: 700, wood: 400 }, maxHealth: 800, trainUnits: ['soldier', 'archer', 'knight'], buildable: true, image: 'assets/buildings/barracks.png', buildTime: 30 },
+    farm: { name: 'Farm', symbol: 'F', health: 400, size: 2, cost: { gold: 500, wood: 250 }, maxHealth: 400, foodCapacity: 5, buildable: true, image: 'assets/buildings/farm.png', buildTime: 15 },
+    guardtower: { name: 'Guard Tower', symbol: 'T', health: 500, size: 2, cost: { gold: 600, wood: 200 }, maxHealth: 500, attack: 10, range: 6, attackCooldown: 30, buildable: true, image: 'assets/buildings/guardtower.png', buildTime: 25 },
+    lumbermill: { name: 'Lumber Mill', symbol: 'L', health: 600, size: 3, cost: { gold: 600, wood: 450 }, maxHealth: 600, buildable: true, image: 'assets/buildings/lumbermill.png', buildTime: 20 },
+    blacksmith: { name: 'Blacksmith', symbol: 'S', health: 700, size: 3, cost: { gold: 800, wood: 450 }, maxHealth: 700, buildable: true, image: 'assets/buildings/blacksmith.png', buildTime: 30 },
+    goldmine: { name: 'Gold Mine', symbol: 'G', health: 10000, size: 2, cost: { gold: 0, wood: 0 }, maxHealth: 10000, neutral: true, image: 'assets/buildings/goldmine.png', buildTime: 0 }
 };
 
 export const UPGRADES = {

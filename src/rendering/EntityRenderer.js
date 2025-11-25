@@ -115,12 +115,12 @@ export default class EntityRenderer {
 
                 // Draw
                 if (buildingImage) {
-                    if (b.faction !== FACTIONS.NEUTRAL.id) {
-                        ctx.globalAlpha = 0.3;
-                        ctx.fillStyle = faction.color;
-                        ctx.fillRect(x, y, size, size);
-                        ctx.globalAlpha = 1.0;
-                    }
+                    // if (b.faction !== FACTIONS.NEUTRAL.id) {
+                    //     ctx.globalAlpha = 0.3;
+                    //     ctx.fillStyle = faction.color;
+                    //     ctx.fillRect(x, y, size, size);
+                    //     ctx.globalAlpha = 1.0;
+                    // }
                     ctx.drawImage(buildingImage, x, y, size, size);
                 } else {
                     // Fallback
