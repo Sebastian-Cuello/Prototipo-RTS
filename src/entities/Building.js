@@ -156,13 +156,16 @@ export default class Building extends Entity {
             if (this.faction === FACTIONS.PLAYER.id) logGameMessage("Not enough food capacity!");
             return;
         }
-        if (resources.gold < unitStats.cost.gold || resources.wood < unitStats.cost.wood) {
+
+        // Safe wood cost check (handle undefined or 0)
+        const woodCost = unitStats.cost.wood || 0;
+        if (resources.gold < unitStats.cost.gold || resources.wood < woodCost) {
             if (this.faction === FACTIONS.PLAYER.id) logGameMessage("Not enough resources!");
             return;
         }
 
         resources.gold -= unitStats.cost.gold;
-        if (unitStats.cost.wood) resources.wood -= unitStats.cost.wood;
+        resources.wood -= woodCost; // Always deduct wood (even if 0)
 
         if (this.faction === FACTIONS.PLAYER.id) {
             gameState.resources.gold = resources.gold;

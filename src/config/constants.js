@@ -13,7 +13,7 @@
  * - MS_PER_UPDATE: Fixed timestep for game logic (30 FPS)
  */
 
-export const TILE_SIZE = 32;
+export const TILE_SIZE = 64;
 export const MAP_WIDTH = 75;
 export const MAP_HEIGHT = 75;
 export const UI_PANEL_HEIGHT = 150;

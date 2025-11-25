@@ -554,23 +554,43 @@ export default class Unit extends Entity {
         if (this.type !== 'peasant') return logGameMessage("Only Peasants can build!");
         const cost = BUILDING_STATS[buildingType].cost;
 
-        if (this.faction === FACTIONS.PLAYER.id && !bypassCost) {
-            if (gameState.resources.gold >= cost.gold && gameState.resources.wood >= cost.wood) {
-                gameState.resources.gold -= cost.gold;
-                gameState.resources.wood -= cost.wood;
+        // Check and deduct resources for ALL factions (not just player)
+        if (!bypassCost) {
+            // Ensure faction resources exist
+            if (!gameState.factionResources[this.faction]) {
+                gameState.factionResources[this.faction] = { gold: 0, wood: 0, stone: 0, foodUsed: 0, foodMax: 5 };
+            }
+
+            const resources = gameState.factionResources[this.faction];
+
+            // Check if faction has enough resources
+            if (resources.gold < cost.gold || resources.wood < cost.wood) {
+                if (this.faction === FACTIONS.PLAYER.id) {
+                    logGameMessage(`Not enough resources to build ${BUILDING_STATS[buildingType].name}!`);
+                }
+                return;
+            }
+
+            // Deduct resources
+            resources.gold -= cost.gold;
+            resources.wood -= cost.wood;
+
+            // Sync player UI if this is player faction
+            if (this.faction === FACTIONS.PLAYER.id) {
+                gameState.resources.gold = resources.gold;
+                gameState.resources.wood = resources.wood;
                 updateResourcesUI();
-            } else {
-                return logGameMessage(`Not enough resources to build ${BUILDING_STATS[buildingType].name}!`);
             }
         }
 
-        // FIX: Use this.faction (which is the ID) directly, not this.faction.id
+        // Create blueprint
         const blueprint = new Building(x, y, this.faction, buildingType, true);
         buildings.push(blueprint);
 
         this.buildTarget = blueprint;
         this.isBuilding = true;
         this.isGathering = false; // Stop gathering
+        this.constructionProgress = 0; // Initialize construction progress
         this.moveTo(x, y);
 
         if (this.faction === FACTIONS.PLAYER.id) {
@@ -591,10 +611,20 @@ export default class Unit extends Entity {
         // If close enough, build. If not, move closer.
         if (dist < 2.5) {
             this.isMoving = false; // Stop moving to focus on building
-            this.buildTarget.health += 5; // Simple build rate
-            this.buildTarget.health = Math.min(this.buildTarget.health, this.buildTarget.maxHealth);
 
-            if (this.buildTarget.health >= this.buildTarget.maxHealth) {
+            // Timer-based construction (similar to unit training)
+            const buildTime = this.buildTarget.stats.buildTime || 30; // Default 30s if not defined
+            const totalFrames = buildTime * 30; // buildTime in seconds * 30 frames/second
+
+            this.constructionProgress++;
+
+            // Update building health proportionally to progress
+            const progressRatio = this.constructionProgress / totalFrames;
+            this.buildTarget.health = Math.floor(this.buildTarget.maxHealth * progressRatio);
+
+            // Check if construction is complete
+            if (this.constructionProgress >= totalFrames) {
+                this.buildTarget.health = this.buildTarget.maxHealth;
                 this.buildTarget.isBlueprint = false;
 
                 // Update food capacity for the faction
@@ -612,8 +642,12 @@ export default class Unit extends Entity {
 
                 this.isBuilding = false;
                 this.buildTarget = null;
+                this.constructionProgress = 0;
                 soundManager.play('build_complete');
-                logGameMessage("Building complete!");
+
+                if (this.faction === FACTIONS.PLAYER.id) {
+                    logGameMessage("Building complete!");
+                }
             }
         } else if (!this.isMoving) {
             // If we are not moving but too far, move closer
