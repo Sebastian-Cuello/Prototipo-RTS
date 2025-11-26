@@ -201,10 +201,10 @@ export default class EntityRenderer {
                     if (unitImage) {
                         // Optimized: No clip(), just draw image
                         // Draw faction background for identification
-                        ctx.fillStyle = faction.color;
-                        ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        // ctx.fillStyle = faction.color;
+                        // ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
 
-                        const imageSize = TILE_SIZE * 0.8;
+                        const imageSize = TILE_SIZE * 0.95;
                         const imageOffset = (TILE_SIZE - imageSize) / 2;
                         ctx.drawImage(unitImage, x + imageOffset, y + imageOffset, imageSize, imageSize);
                     } else {
